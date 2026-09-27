@@ -2,6 +2,7 @@
 
 namespace Vskstudio\Takt\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vskstudio\Takt\Mode;
 use Vskstudio\Takt\Options;
@@ -258,5 +259,97 @@ final class SnippetRendererTest extends TestCase
         )))->render();
         $this->assertStringNotContainsString('</script>"', $html);
         $this->assertStringContainsString('<\\/script>', $html);
+    }
+
+    public function test_sdk_mode_emits_redact_routes_in_browser_syntax(): void
+    {
+        $html = (new SnippetRenderer(new Options(
+            domain: 'example.com',
+            mode: Mode::Sdk,
+            redactRoutes: ['/verify/[token]', '/reset/{code}', '/posts/{page?}'],
+        )))->render();
+        $this->assertStringContainsString('"redactRoutes":["\/verify\/[token]","\/reset\/[code]","\/posts\/[[page]]"]', $html);
+        $this->assertStringNotContainsString('routeTemplates', $html);
+    }
+
+    public function test_sdk_mode_grafts_the_route_template_as_a_resolver(): void
+    {
+        $html = (new SnippetRenderer(new Options(
+            domain: 'example.com',
+            mode: Mode::Sdk,
+            routeTemplates: true,
+            routeTemplate: 'posts/{page?}',
+        )))->render();
+        $this->assertStringContainsString('"routeTemplates":true', $html);
+        $this->assertStringContainsString('Object.assign({', $html);
+        $this->assertStringContainsString('routeTemplate:()=>"\/posts\/{page}"', $html);
+    }
+
+    public function test_sdk_mode_grafts_scrub_url_and_route_template_together(): void
+    {
+        $html = (new SnippetRenderer(new Options(
+            domain: 'example.com',
+            mode: Mode::Sdk,
+            scrubUrl: '(u)=>u',
+            routeTemplates: true,
+            routeTemplate: '/users/{id}',
+        )))->render();
+        $this->assertStringContainsString(',{scrubUrl:(u)=>u,routeTemplate:()=>"\/users\/{id}"})', $html);
+    }
+
+    public function test_route_template_cannot_break_out_of_the_script(): void
+    {
+        $html = (new SnippetRenderer(new Options(
+            domain: 'example.com',
+            mode: Mode::Sdk,
+            routeTemplates: true,
+            routeTemplate: '/a/</script><script>alert(1)</script>',
+        )))->render();
+        $this->assertSame(1, substr_count($html, '</script>'));
+        $this->assertStringNotContainsString('<script>alert', $html);
+    }
+
+    public function test_route_template_is_ignored_without_route_templates(): void
+    {
+        $html = (new SnippetRenderer(new Options(domain: 'example.com', mode: Mode::Sdk, routeTemplate: '/users/{id}')))->render();
+        $this->assertStringNotContainsString('routeTemplate', $html);
+    }
+
+    public function test_route_templates_without_a_template_emits_only_the_flag(): void
+    {
+        $html = (new SnippetRenderer(new Options(domain: 'example.com', mode: Mode::Sdk, routeTemplates: true)))->render();
+        $this->assertStringContainsString('"routeTemplates":true', $html);
+        $this->assertStringNotContainsString('routeTemplate:', $html);
+        $this->assertStringNotContainsString('Object.assign', $html);
+    }
+
+    /** @return iterable<string,array{Mode}> */
+    public static function minimalModes(): iterable
+    {
+        yield 'inline' => [Mode::Inline];
+        yield 'cdn' => [Mode::Cdn];
+        yield 'asset' => [Mode::Asset];
+    }
+
+    #[DataProvider('minimalModes')]
+    public function test_redact_routes_outside_sdk_mode_throws(Mode $mode): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('redactRoutes');
+        new SnippetRenderer(new Options(domain: 'example.com', mode: $mode, redactRoutes: ['/verify/[token]']));
+    }
+
+    #[DataProvider('minimalModes')]
+    public function test_route_templates_outside_sdk_mode_throws(Mode $mode): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('routeTemplates');
+        new SnippetRenderer(new Options(domain: 'example.com', mode: $mode, routeTemplates: true));
+    }
+
+    public function test_a_bare_route_template_is_harmless_outside_sdk_mode(): void
+    {
+        $html = (new SnippetRenderer(new Options(domain: 'example.com', mode: Mode::Cdn, routeTemplate: '/users/{id}')))->render();
+        $this->assertStringNotContainsString('users', $html);
     }
 }
