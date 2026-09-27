@@ -14,6 +14,7 @@ final class Options
      * @param list<string> $fileExtensions
      * @param list<string> $queryParams
      * @param list<string> $exclude
+     * @param list<string> $redactRoutes
      *
      * @param string $endpoint Where the tracker posts events. Defaults to the
      *   hosted Takt origin ({@see self::HOSTED_ENDPOINT}) so a bare setup works
@@ -45,7 +46,37 @@ final class Options
         public readonly ?string $scrubUrl = null,
         /** Path prefixes never tracked (segment-bounded, checked at send time); Mode::Sdk only. */
         public readonly array $exclude = [],
+        public readonly array $redactRoutes = [],
+        public readonly bool $routeTemplates = false,
+        public readonly ?string $routeTemplate = null,
     ) {
+    }
+
+    public function withRouteTemplate(?string $routeTemplate): self
+    {
+        return new self(
+            domain: $this->domain,
+            endpoint: $this->endpoint,
+            scriptOrigin: $this->scriptOrigin,
+            outbound: $this->outbound,
+            files: $this->files,
+            excludeLocalhost: $this->excludeLocalhost,
+            nonce: $this->nonce,
+            mode: $this->mode,
+            notFound: $this->notFound,
+            tagged: $this->tagged,
+            fileExtensions: $this->fileExtensions,
+            sampleRate: $this->sampleRate,
+            trackQuery: $this->trackQuery,
+            queryParams: $this->queryParams,
+            respectDnt: $this->respectDnt,
+            enabled: $this->enabled,
+            scrubUrl: $this->scrubUrl,
+            exclude: $this->exclude,
+            redactRoutes: $this->redactRoutes,
+            routeTemplates: $this->routeTemplates,
+            routeTemplate: $routeTemplate,
+        );
     }
 
     /** @param array<string,mixed> $a */
@@ -77,12 +108,20 @@ final class Options
             enabled: self::nullableBool($a['enabled'] ?? null),
             scrubUrl: isset($a['scrubUrl']) || isset($a['scrub_url']) ? self::str($a['scrubUrl'] ?? $a['scrub_url']) : null,
             exclude: self::strList($a['exclude'] ?? []),
+            redactRoutes: self::strList($a['redactRoutes'] ?? ($a['redact_routes'] ?? [])),
+            routeTemplates: (bool) ($a['routeTemplates'] ?? ($a['route_templates'] ?? false)),
+            routeTemplate: self::nullableStr($a['routeTemplate'] ?? ($a['route_template'] ?? null)),
         );
     }
 
     private static function str(mixed $v): string
     {
         return is_scalar($v) ? (string) $v : '';
+    }
+
+    private static function nullableStr(mixed $v): ?string
+    {
+        return is_scalar($v) && ($s = trim((string) $v)) !== '' ? $s : null;
     }
 
     private static function nullableFloat(mixed $v): ?float

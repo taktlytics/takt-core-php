@@ -73,6 +73,9 @@ Each is `null` by default ("unset" — the tracker's own default applies); only 
 - `enabled: false` — kill-switch; the snippet still renders but the tracker boots disabled (`data-enabled`).
 - `scrubUrl: '(u) => u.split("#")[0]'` — a **raw JS function** to rewrite every URL before it is sent.
 - `exclude: ['/app', '/account']` — path prefixes never tracked (segment-bounded: `/app` matches `/app` and `/app/…` but not `/application`), checked at send time so it holds across SPA navigation.
+- `redactRoutes: ['/verify/{token}', '/reset/[code]']`: sensitive routes, sent as their pattern instead of the real path. See [Route redaction](#route-redaction).
+- `routeTemplates: true`: send every page as its route template. See [Route redaction](#route-redaction).
+- `routeTemplate: '/users/{id}'`: the route template of the page being rendered, used when `routeTemplates` is on.
 
 ```php
 new Options(domain: 'example.com', sampleRate: 0.5, queryParams: ['utm_source']);
@@ -91,6 +94,26 @@ new Options(
     scrubUrl: '(u) => u.split("?")[0]',
 );
 ```
+
+### Route redaction
+
+Query strings are stripped by default, but path segments are sent as they are: `/verify/abc123` leaks the token. Two opt-in options replace real paths with route templates. Both live only in the full SDK, so they require `Mode::Sdk`; setting either in `inline`/`cdn`/`asset` mode throws.
+
+```php
+new Options(
+    domain: 'example.com',
+    mode: Mode::Sdk,
+    redactRoutes: ['/verify/{token}', '/reset/:code', '/invoices/[id].pdf'],
+);
+```
+
+`redactRoutes` lists the sensitive routes. A matching path is sent as the pattern, every other path keeps its real value. Patterns accept `[param]`, `[[optional]]`, `[...rest]`, `(group)`, `:param`, `:param?`, `*`, `**`, and the Laravel / Symfony syntax `{param}` and `{param?}`. The browser SDK does not read the brace syntax, so the renderer hands it `{token}` as `[token]` and `{page?}` as `[[page]]`: the browser sends `/verify/[token]` where the server client sends `/verify/{token}`. Write bracket patterns if both must report the same row.
+
+```php
+new Options(domain: 'example.com', mode: Mode::Sdk, routeTemplates: true, routeTemplate: '/users/{id}');
+```
+
+`routeTemplates: true` sends every page as its route template. PHP renders each page on the server, so pass the template of the current route as `routeTemplate`: it is emitted as a constant `routeTemplate: () => "/users/{id}"` resolver, in canonical form (`{id?}` becomes `{id}`). `Options::withRouteTemplate()` and `SnippetRenderer::withRouteTemplate()` return a copy with a per-request template. The Laravel and Symfony bridges fill it for you.
 
 ## Takt (server-to-server client)
 
@@ -112,12 +135,19 @@ $takt
 
 // or a pageview
 $takt->withVisitor($ip, $userAgent)->pageview('https://example.com/welcome');
+
+// sensitive routes are sent as their pattern
+$takt = new Takt(Options::HOSTED_ORIGIN, 'example.com', $apiKey, redactRoutes: ['/verify/{token}']);
+$takt->pageview('https://example.com/verify/abc123');
+$takt->event('Verified', url: 'https://example.com/users/42', route: '/users/{id}');
 ```
 
 - Requires an ingest-scoped API key bound to the domain.
 - Use `->withVisitor($ip, $userAgent)` so events are attributed to the visitor rather than your server.
 - Pass the page URL whenever you have one — it is what the event is attributed to. Omitted (or blank), it falls back to the site home derived from `domain` (`https://example.com/`): the ingest rejects a non-absolute URL outright, so an empty one would drop the event.
 - Fire-and-forget by default: transport errors are swallowed. Call `->strict()` to get a client that throws on failure (handy in tests).
+- Pass `redactRoutes: [...]` to the constructor to redact the page URL and same-origin referrer of every call, with the same patterns as the snippet.
+- Pass `route: '/users/{id}'` to `pageview()` or `event()` to send that call under a route template, or set a default for every call of a client with `->withRoute('/users/{id}')` (a string, or a closure returning one, resolved at send time). An explicit `route:` wins over the default. In this mode a same-origin referrer is reduced to the site origin.
 - The PSR-18 HTTP client and PSR-17 factories are auto-discovered (`php-http/discovery`). You may also inject your own.
 
 ## Wire payload

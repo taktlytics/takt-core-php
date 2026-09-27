@@ -4,8 +4,8 @@ namespace Vskstudio\Takt;
 
 final class SnippetRenderer
 {
-    private const CDN_BASE = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.9.0/dist/takt.auto.js';
-    private const ESM_CDN = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.9.0/+esm';
+    private const CDN_BASE = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.10.0/dist/takt.auto.js';
+    private const ESM_CDN = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.10.0/+esm';
     private const ASSET_PATH = '/takt/takt.auto.js';
     private const ESM_PATH = '/takt/takt.esm.js';
 
@@ -22,6 +22,17 @@ final class SnippetRenderer
         if ($options->exclude !== [] && $options->mode !== Mode::Sdk) {
             throw new \InvalidArgumentException('Takt: exclude requires Mode::Sdk; the minimal snippet does not support path exclusion.');
         }
+        if ($options->redactRoutes !== [] && $options->mode !== Mode::Sdk) {
+            throw new \InvalidArgumentException('Takt: redactRoutes requires Mode::Sdk; the minimal snippet does not support route redaction.');
+        }
+        if ($options->routeTemplates && $options->mode !== Mode::Sdk) {
+            throw new \InvalidArgumentException('Takt: routeTemplates requires Mode::Sdk; the minimal snippet does not support route templates.');
+        }
+    }
+
+    public function withRouteTemplate(?string $routeTemplate): self
+    {
+        return new self($this->options->withRouteTemplate($routeTemplate));
     }
 
     public function render(): string
@@ -162,13 +173,27 @@ final class SnippetRenderer
     {
         $o = $this->options;
         $arg = $this->sdkConfigJson();
+        $functions = [];
         if ($o->scrubUrl !== null && $o->scrubUrl !== '') {
             // scrubUrl is grafted as a raw JS function, outside the JSON literal.
-            $arg = sprintf('Object.assign(%s,{scrubUrl:%s})', $arg, $o->scrubUrl);
+            $functions[] = 'scrubUrl:' . $o->scrubUrl;
+        }
+        if (($template = $this->routeTemplate()) !== null) {
+            $functions[] = 'routeTemplate:()=>' . json_encode($template, JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR);
+        }
+        if ($functions !== []) {
+            $arg = sprintf('Object.assign(%s,{%s})', $arg, implode(',', $functions));
         }
         $body = sprintf('import{init}from%s;init(%s)', json_encode($this->esmSrc()), $arg);
 
         return sprintf('<script type="module"%s>%s</script>', $this->nonceAttr(), self::neutralizeScriptClose($body));
+    }
+
+    private function routeTemplate(): ?string
+    {
+        $template = trim($this->options->routeTemplate ?? '');
+
+        return $this->options->routeTemplates && $template !== '' ? RouteRedaction::canonical($template) : null;
     }
 
     private function esmSrc(): string
@@ -210,6 +235,12 @@ final class SnippetRenderer
         }
         if ($o->exclude !== []) {
             $c['exclude'] = $o->exclude;
+        }
+        if ($o->redactRoutes !== []) {
+            $c['redactRoutes'] = array_map(RouteRedaction::browserPattern(...), $o->redactRoutes);
+        }
+        if ($o->routeTemplates) {
+            $c['routeTemplates'] = true;
         }
         if ($o->outbound) {
             $c['outbound'] = true;

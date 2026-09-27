@@ -205,4 +205,138 @@ final class TaktTest extends TestCase
 
         $this->assertSame($expected, (string) $mock->getLastRequest()->getUri());
     }
+
+    /** @param list<string> $redactRoutes */
+    private function makeRedactingClient(Client $mock, array $redactRoutes): Takt
+    {
+        $psr17 = new Psr17Factory();
+
+        return new Takt(
+            endpoint: 'https://takt.example.com',
+            domain: 'example.com',
+            httpClient: $mock,
+            requestFactory: $psr17,
+            streamFactory: $psr17,
+            redactRoutes: $redactRoutes,
+        );
+    }
+
+    /** @return array<mixed> */
+    private static function lastBody(Client $mock): array
+    {
+        return (array) json_decode((string) $mock->getLastRequest()->getBody(), true);
+    }
+
+    public function test_redact_routes_rewrites_url_and_same_origin_referrer(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, ['/verify/{token}'])
+            ->pageview('https://example.com/verify/abc?x=1', 'https://example.com/verify/old');
+
+        $body = self::lastBody($mock);
+        $this->assertSame('https://example.com/verify/{token}?x=1', $body['u']);
+        $this->assertSame('https://example.com/verify/{token}', $body['r']);
+    }
+
+    public function test_redact_routes_keeps_cross_origin_referrer_and_other_paths(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, ['/verify/[token]'])
+            ->event('Signup', [], null, 'https://example.com/pricing', 'https://other.example/verify/abc');
+
+        $body = self::lastBody($mock);
+        $this->assertSame('https://example.com/pricing', $body['u']);
+        $this->assertSame('https://other.example/verify/abc', $body['r']);
+    }
+
+    public function test_route_argument_replaces_the_path_of_one_call(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $mock->addResponse(new Response(202));
+        $takt = $this->makeRedactingClient($mock, []);
+
+        $takt->event('Signup', [], null, 'https://example.com/users/42', 'https://example.com/users/41', route: '/users/{id?}');
+        $body = self::lastBody($mock);
+        $this->assertSame('https://example.com/users/{id}', $body['u']);
+        $this->assertSame('https://example.com/', $body['r']);
+
+        $takt->pageview('https://example.com/users/42');
+        $this->assertSame('https://example.com/users/42', self::lastBody($mock)['u']);
+    }
+
+    public function test_pageview_accepts_a_route(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, [])->pageview('https://example.com/blog/hello', route: '/blog/[slug]');
+
+        $this->assertSame('https://example.com/blog/[slug]', self::lastBody($mock)['u']);
+    }
+
+    public function test_route_applies_to_the_site_home_fallback(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, [])->event('Purchase', route: '/checkout/{order}');
+
+        $this->assertSame('https://example.com/checkout/{order}', self::lastBody($mock)['u']);
+    }
+
+    public function test_blank_route_falls_back_to_redact_routes(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, ['/verify/[token]'])->pageview('https://example.com/verify/abc', route: '  ');
+
+        $this->assertSame('https://example.com/verify/[token]', self::lastBody($mock)['u']);
+    }
+
+    public function test_with_route_sets_a_default_route_that_a_call_can_override(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $mock->addResponse(new Response(202));
+        $base = $this->makeRedactingClient($mock, []);
+        $takt = $base->withRoute('/users/{id}');
+
+        $takt->pageview('https://example.com/users/42');
+        $this->assertSame('https://example.com/users/{id}', self::lastBody($mock)['u']);
+
+        $takt->pageview('https://example.com/users/42', route: '/profile/{id}');
+        $this->assertSame('https://example.com/profile/{id}', self::lastBody($mock)['u']);
+
+        $this->assertNotSame($base, $takt);
+    }
+
+    public function test_with_route_accepts_a_lazy_resolver(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $mock->addResponse(new Response(202));
+        $current = null;
+        $takt = $this->makeRedactingClient($mock, [])->withRoute(static function () use (&$current): ?string {
+            return $current;
+        });
+
+        $takt->pageview('https://example.com/users/42');
+        $this->assertSame('https://example.com/users/42', self::lastBody($mock)['u']);
+
+        $current = '/users/{id}';
+        $takt->pageview('https://example.com/users/42');
+        $this->assertSame('https://example.com/users/{id}', self::lastBody($mock)['u']);
+    }
+
+    public function test_a_failing_route_resolver_does_not_break_tracking(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, [])
+            ->withRoute(static fn (): string => throw new \LogicException('no route'))
+            ->pageview('https://example.com/users/42');
+
+        $this->assertSame('https://example.com/users/42', self::lastBody($mock)['u']);
+    }
 }

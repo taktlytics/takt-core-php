@@ -28,6 +28,43 @@ final class OptionsTest extends TestCase
         $this->assertNull($o->respectDnt);
         $this->assertNull($o->enabled);
         $this->assertNull($o->scrubUrl);
+        $this->assertSame([], $o->redactRoutes);
+        $this->assertFalse($o->routeTemplates);
+        $this->assertNull($o->routeTemplate);
+    }
+
+    public function test_from_array_reads_route_options_in_both_casings(): void
+    {
+        $camel = Options::fromArray([
+            'domain' => 'a.com',
+            'redactRoutes' => ['/verify/[token]', ' ', '/reset/:code'],
+            'routeTemplates' => true,
+            'routeTemplate' => '/verify/{token}',
+        ]);
+        $this->assertSame(['/verify/[token]', '/reset/:code'], $camel->redactRoutes);
+        $this->assertTrue($camel->routeTemplates);
+        $this->assertSame('/verify/{token}', $camel->routeTemplate);
+
+        $snake = Options::fromArray([
+            'domain' => 'a.com',
+            'redact_routes' => ['/verify/{token}'],
+            'route_templates' => true,
+            'route_template' => '/verify/{token}',
+        ]);
+        $this->assertSame(['/verify/{token}'], $snake->redactRoutes);
+        $this->assertTrue($snake->routeTemplates);
+        $this->assertSame('/verify/{token}', $snake->routeTemplate);
+    }
+
+    public function test_with_route_template_returns_a_copy(): void
+    {
+        $base = new Options(domain: 'a.com', mode: Mode::Sdk, routeTemplates: true, redactRoutes: ['/a/[b]']);
+        $copy = $base->withRouteTemplate('/users/{id}');
+        $this->assertNull($base->routeTemplate);
+        $this->assertSame('/users/{id}', $copy->routeTemplate);
+        $this->assertSame(Mode::Sdk, $copy->mode);
+        $this->assertSame(['/a/[b]'], $copy->redactRoutes);
+        $this->assertTrue($copy->routeTemplates);
     }
 
     public function test_from_array_overrides(): void
