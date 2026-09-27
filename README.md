@@ -78,6 +78,8 @@ Each is `null` by default ("unset" — the tracker's own default applies); only 
 new Options(domain: 'example.com', sampleRate: 0.5, queryParams: ['utm_source']);
 ```
 
+In `Mode::Sdk`, `scrubUrl` rewrites the page URL and referrer, and since `@vskstudio/takt-core@0.9.0` also the `url` prop of autocaptured outbound link clicks (`outbound: true`) and file downloads (`files: true`). A token hidden in the path of an outbound or download link is therefore scrubbed like the page URL. The minimal snippet of the other modes only strips the query string and hash of those links.
+
 `scrubUrl` cannot be expressed as a data-attribute, so it requires `Mode::Sdk`; constructing a `SnippetRenderer` with `scrubUrl` set in any other mode throws. It is injected **verbatim** into the page as JavaScript — it is **dev-controlled only**. Never build it from user input.
 
 `exclude` likewise lives only in the full SDK (the ≤ 1 kB minimal snippet omits it), so it too requires `Mode::Sdk`; setting it in `inline`/`cdn`/`asset` mode throws rather than silently dropping the exclusion — a dropped privacy control would leak the very paths it is meant to hide.
