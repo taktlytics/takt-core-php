@@ -1,5 +1,25 @@
 # vskstudio/takt-core-php
 
+## 0.6.0
+
+### Minor Changes
+
+- Route redaction. `Options` gains `redactRoutes` (`redact_routes`), a list of
+  sensitive route patterns sent as the pattern instead of the real path
+  (`/verify/abc` becomes `/verify/{token}`), `routeTemplates`
+  (`route_templates`), which sends every page as its route template, and
+  `routeTemplate` (`route_template`), the template of the page being rendered.
+  In `Mode::Sdk` they are handed to the browser SDK, the template as a constant
+  `routeTemplate` resolver; in `inline`/`cdn`/`asset` mode `redactRoutes` and
+  `routeTemplates` throw, since the minimal snippet cannot honor them.
+  Patterns accept `[p]`, `[[p]]`, `[...p]`, `(group)`, `:p`, `:p?`, `*`, `**`
+  and the Laravel / Symfony `{p}` and `{p?}`.
+- The server-to-server `Takt` client takes `redactRoutes` in its constructor,
+  applied to the page URL and same-origin referrer, a `route:` argument on
+  `pageview()` and `event()` that sends one call under a route template, and
+  `withRoute()` to set a default route for every call of a client.
+- Requires `@vskstudio/takt-core@0.10.0` in the browser for `Mode::Sdk`.
+
 ## 0.5.2
 
 ### Patch Changes
