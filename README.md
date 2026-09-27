@@ -113,7 +113,7 @@ new Options(
 new Options(domain: 'example.com', mode: Mode::Sdk, routeTemplates: true, routeTemplate: '/users/{id}');
 ```
 
-`routeTemplates: true` sends every page as its route template. PHP renders each page on the server, so pass the template of the current route as `routeTemplate`: it is emitted as a constant `routeTemplate: () => "/users/{id}"` resolver, in canonical form (`{id?}` becomes `{id}`). `Options::withRouteTemplate()` returns a copy with a per-request template. The Laravel and Symfony bridges fill it for you.
+`routeTemplates: true` sends every page as its route template. PHP renders each page on the server, so pass the template of the current route as `routeTemplate`: it is emitted as a constant `routeTemplate: () => "/users/{id}"` resolver, in canonical form (`{id?}` becomes `{id}`). `Options::withRouteTemplate()` and `SnippetRenderer::withRouteTemplate()` return a copy with a per-request template. The Laravel and Symfony bridges fill it for you.
 
 ## Takt (server-to-server client)
 

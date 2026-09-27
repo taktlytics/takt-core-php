@@ -30,6 +30,11 @@ final class SnippetRenderer
         }
     }
 
+    public function withRouteTemplate(?string $routeTemplate): self
+    {
+        return new self($this->options->withRouteTemplate($routeTemplate));
+    }
+
     public function render(): string
     {
         return match ($this->options->mode) {

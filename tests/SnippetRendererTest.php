@@ -352,4 +352,14 @@ final class SnippetRendererTest extends TestCase
         $html = (new SnippetRenderer(new Options(domain: 'example.com', mode: Mode::Cdn, routeTemplate: '/users/{id}')))->render();
         $this->assertStringNotContainsString('users', $html);
     }
+
+    public function test_with_route_template_renders_a_copy_for_the_current_page(): void
+    {
+        $base = new SnippetRenderer(new Options(domain: 'example.com', mode: Mode::Sdk, routeTemplates: true));
+        $page = $base->withRouteTemplate('/users/{id}');
+
+        $this->assertNotSame($base, $page);
+        $this->assertStringContainsString('routeTemplate:()=>"\/users\/{id}"', $page->render());
+        $this->assertStringNotContainsString('routeTemplate:', $base->render());
+    }
 }
