@@ -13,6 +13,7 @@ final class Takt
     private bool $strict = false;
     private ?string $userIp = null;
     private ?string $userAgent = null;
+    private string|\Closure|null $route = null;
 
     private ClientInterface $httpClient;
     private RequestFactoryInterface $requestFactory;
@@ -27,6 +28,7 @@ final class Takt
      *     {@see Options::HOSTED_ENDPOINT}, used verbatim.
      *   The second form matches {@see Options::$endpoint} and the JS SDK, where
      *   'endpoint' always means the full collect URL. Required, no default.
+     * @param list<string> $redactRoutes
      */
     public function __construct(
         private readonly string $endpoint,
@@ -35,6 +37,7 @@ final class Takt
         ?ClientInterface $httpClient = null,
         ?RequestFactoryInterface $requestFactory = null,
         ?StreamFactoryInterface $streamFactory = null,
+        private readonly array $redactRoutes = [],
     ) {
         $this->httpClient = $httpClient ?? Psr18ClientDiscovery::find();
         $this->requestFactory = $requestFactory ?? Psr17FactoryDiscovery::findRequestFactory();
@@ -46,6 +49,14 @@ final class Takt
         $clone = clone $this;
         $clone->userIp = $ip;
         $clone->userAgent = $userAgent;
+        return $clone;
+    }
+
+    /** @param string|\Closure(): ?string|null $route */
+    public function withRoute(string|\Closure|null $route): self
+    {
+        $clone = clone $this;
+        $clone->route = $route;
         return $clone;
     }
 
@@ -63,14 +74,16 @@ final class Takt
      *   $domain: the ingest rejects a non-absolute URL, so an empty one would drop
      *   the event entirely.
      */
-    public function event(string $name, array $props = [], ?Revenue $revenue = null, ?string $url = null, ?string $referrer = null): void
+    public function event(string $name, array $props = [], ?Revenue $revenue = null, ?string $url = null, ?string $referrer = null, ?string $route = null): void
     {
+        $pageUrl = $this->resolveUrl($url);
+        $redaction = new RouteRedaction($this->redactRoutes, $route ?? $this->defaultRoute());
         $payload = [
             'n' => $name,
             'd' => $this->domain,
-            'u' => $this->resolveUrl($url),
+            'u' => $redaction->page($pageUrl),
             // The referrer, unlike the URL, is optional server-side: empty = direct.
-            'r' => $referrer ?? '',
+            'r' => $referrer !== null && $referrer !== '' ? $redaction->referrer($referrer, $pageUrl) : '',
         ];
         if ($props !== []) {
             $payload['p'] = array_map(static fn ($v) => (string) $v, $props);
@@ -82,9 +95,24 @@ final class Takt
         $this->send($payload);
     }
 
-    public function pageview(?string $url = null, ?string $referrer = null): void
+    public function pageview(?string $url = null, ?string $referrer = null, ?string $route = null): void
     {
-        $this->event('pageview', [], null, $url, $referrer);
+        $this->event('pageview', [], null, $url, $referrer, $route);
+    }
+
+    private function defaultRoute(): ?string
+    {
+        if ($this->route instanceof \Closure) {
+            try {
+                $route = ($this->route)();
+            } catch (\Throwable) {
+                return null;
+            }
+
+            return is_string($route) ? $route : null;
+        }
+
+        return $this->route;
     }
 
     /**
