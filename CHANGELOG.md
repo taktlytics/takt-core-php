@@ -1,5 +1,18 @@
 # vskstudio/takt-core-php
 
+## 0.5.2
+
+### Patch Changes
+
+- Bump the CDN/ESM tracker pins to `@vskstudio/takt-core@0.9.0`. In `Mode::Sdk`,
+  `scrubUrl` now also rewrites the `url` prop of autocaptured outbound link
+  clicks and file downloads, not only the page URL and referrer, so a secret in
+  the path of such a link no longer reaches Takt unscrubbed.
+- Re-vendor the inline browser tracker (`resources/takt.auto.js`) from
+  `@vskstudio/takt-core@0.9.0` (it was still the 0.5.1 build). Rendered snippets
+  are unchanged in behavior: the endpoint is always pinned explicitly when no
+  `scriptOrigin` is set. `bin/sync-bundle.sh` now defaults to 0.9.0.
+
 ## 0.5.1
 
 ### Patch Changes
