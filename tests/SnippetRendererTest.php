@@ -200,7 +200,7 @@ final class SnippetRendererTest extends TestCase
         )))->render();
         $this->assertStringContainsString('<script type="module"', $html);
         $this->assertStringContainsString('import{init}from', $html);
-        $this->assertStringContainsString('@vskstudio\/takt-core@0.8.0\/+esm', $html);
+        $this->assertStringContainsString('@vskstudio\/takt-core@0.9.0\/+esm', $html);
         $this->assertStringContainsString('init({', $html);
         $this->assertStringContainsString('"domain":"example.com"', $html);
         $this->assertStringContainsString('"sampleRate":0.25', $html);
