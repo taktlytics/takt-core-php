@@ -12,7 +12,7 @@ final class SnippetRendererTest extends TestCase
     public function test_cdn_mode_emits_loader_with_data_attrs(): void
     {
         $html = (new SnippetRenderer(new Options(domain: 'example.com', outbound: true, mode: Mode::Cdn)))->render();
-        $this->assertStringContainsString('cdn.jsdelivr.net/npm/@vskstudio/takt-core', $html);
+        $this->assertStringContainsString('cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.9.0/dist/takt.auto.js', $html);
         $this->assertStringContainsString('takt.auto.js', $html);
         $this->assertStringContainsString('data-domain="example.com"', $html);
         $this->assertStringContainsString('data-auto="outbound"', $html);
