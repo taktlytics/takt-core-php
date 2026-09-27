@@ -18,7 +18,9 @@
   applied to the page URL and same-origin referrer, a `route:` argument on
   `pageview()` and `event()` that sends one call under a route template, and
   `withRoute()` to set a default route for every call of a client.
-- Requires `@vskstudio/takt-core@0.10.0` in the browser for `Mode::Sdk`.
+- Bump the CDN/ESM tracker pins and the vendored `takt.auto.js` to
+  `@vskstudio/takt-core@0.10.0`, which `Mode::Sdk` requires for these options.
+  `bin/sync-bundle.sh` now defaults to 0.10.0.
 
 ## 0.5.2
 

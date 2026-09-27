@@ -4,8 +4,8 @@ namespace Vskstudio\Takt;
 
 final class SnippetRenderer
 {
-    private const CDN_BASE = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.9.0/dist/takt.auto.js';
-    private const ESM_CDN = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.9.0/+esm';
+    private const CDN_BASE = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.10.0/dist/takt.auto.js';
+    private const ESM_CDN = 'https://cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.10.0/+esm';
     private const ASSET_PATH = '/takt/takt.auto.js';
     private const ESM_PATH = '/takt/takt.esm.js';
 
