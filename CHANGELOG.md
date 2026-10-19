@@ -1,5 +1,15 @@
 # vskstudio/takt-core-php
 
+## 0.6.1
+
+### Patch Changes
+
+- Bump the CDN/ESM tracker pins and the vendored `takt.auto.js` to
+  `@vskstudio/takt-core@0.11.1`. Route redaction now also applies to
+  outbound-link and file-download destinations and to the `404` path, and
+  `exclude` matches case-insensitively on the percent-decoded path.
+  `bin/sync-bundle.sh` now defaults to 0.11.1.
+
 ## 0.6.0
 
 ### Minor Changes
