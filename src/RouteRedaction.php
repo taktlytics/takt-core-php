@@ -10,6 +10,7 @@ final class RouteRedaction
     private const PARAM = '#\[[^\]]+\]|:\w+(\([^)]*\))?|\{\w+(<[^>]*>)?(\?[^}]*)?\}#';
     private const BRACE = '#\{(\w+)(<[^>]*>)?(\?[^}]*)?\}#';
     private const RESERVED_ESCAPES = ['23', '24', '26', '2B', '2C', '2F', '3A', '3B', '3D', '3F', '40'];
+    private const FAILED_OUTPUT = '/[redacted]';
 
     /** @var list<array{regex:string,output:string}> */
     private readonly array $routes;
@@ -118,7 +119,7 @@ final class RouteRedaction
             }
         }
 
-        return '#^' . $source . '/?$#D';
+        return '#^' . $source . '/?$#Di';
     }
 
     private static function segmentSource(string $segment): string
@@ -136,14 +137,35 @@ final class RouteRedaction
 
     private function redactedPath(string $pathname): ?string
     {
-        $decoded = self::decodeUri($pathname);
+        $candidates = self::candidates($pathname);
         foreach ($this->routes as $route) {
-            if (preg_match($route['regex'], $pathname) === 1 || preg_match($route['regex'], $decoded) === 1) {
-                return $route['output'];
+            foreach ($candidates as $candidate) {
+                $matched = preg_match($route['regex'], $candidate);
+                if ($matched === false) {
+                    return self::FAILED_OUTPUT;
+                }
+                if ($matched === 1) {
+                    return $route['output'];
+                }
             }
         }
 
         return null;
+    }
+
+    /** @return list<string> */
+    private static function candidates(string $pathname): array
+    {
+        return array_values(array_unique([
+            self::collapseSlashes($pathname),
+            self::collapseSlashes(self::decodeUri($pathname)),
+            self::collapseSlashes(rawurldecode($pathname)),
+        ]));
+    }
+
+    private static function collapseSlashes(string $path): string
+    {
+        return preg_replace('#/+#', '/', $path) ?? $path;
     }
 
     private function rewrite(string $url, ?string $template): string

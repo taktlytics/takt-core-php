@@ -49,6 +49,14 @@ final class RouteRedactionTest extends TestCase
         yield 'brace optional absent' => ['/posts/{page?}', '/posts', '/posts/{page}'];
         yield 'brace optional present' => ['/posts/{page?}', '/posts/3', '/posts/{page}'];
         yield 'encoded path' => ['/café/[id]', '/caf%C3%A9/9', '/café/[id]'];
+        yield 'encoded slash' => ['/orders/[id]', '/orders%2F123', '/orders/[id]'];
+        yield 'lowercase encoded slash' => ['/orders/[id]', '/orders%2f123', '/orders/[id]'];
+        yield 'encoded slash in the middle' => ['/orders/[id]/items', '/orders%2F123/items', '/orders/[id]/items'];
+        yield 'uppercase path' => ['/orders/[id]', '/Orders/123', '/orders/[id]'];
+        yield 'uppercase literal with param' => ['/Orders/[id]', '/orders/123', '/Orders/[id]'];
+        yield 'leading double slash' => ['/orders/[id]', '//orders/123', '/orders/[id]'];
+        yield 'inner double slash' => ['/orders/[id]', '/orders//123', '/orders/[id]'];
+        yield 'trailing double slash' => ['/orders/[id]', '/orders/123//', '/orders/[id]'];
     }
 
     #[DataProvider('matchingPaths')]
@@ -71,6 +79,24 @@ final class RouteRedactionTest extends TestCase
     public function test_non_matching_path_is_kept(string $pattern, string $path): void
     {
         $this->assertSame($path, (new RouteRedaction([$pattern]))->path($path));
+    }
+
+    public function test_pattern_failing_to_evaluate_never_leaks_the_raw_path(): void
+    {
+        $path = '/x/' . str_repeat('a', 2000) . '.json.x';
+        $redacted = (new RouteRedaction(['/x/:a:b:c.json']))->path($path);
+
+        $this->assertNotSame($path, $redacted);
+        $this->assertStringNotContainsString('aaaa', $redacted);
+    }
+
+    public function test_failing_pattern_does_not_leak_on_page_urls(): void
+    {
+        $url = 'https://example.com/x/' . str_repeat('a', 2000) . '.json.x?t=1';
+        $page = (new RouteRedaction(['/x/:a:b:c.json']))->page($url);
+
+        $this->assertStringNotContainsString('aaaa', $page);
+        $this->assertStringEndsWith('?t=1', $page);
     }
 
     public function test_first_matching_pattern_wins(): void
