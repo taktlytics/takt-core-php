@@ -38,6 +38,7 @@ final class Takt
         ?RequestFactoryInterface $requestFactory = null,
         ?StreamFactoryInterface $streamFactory = null,
         private readonly array $redactRoutes = [],
+        private readonly bool $redactUndecodablePaths = true,
     ) {
         EndpointPolicy::assertSecure($endpoint);
         $this->httpClient = $httpClient ?? Psr18ClientDiscovery::find();
@@ -78,7 +79,11 @@ final class Takt
     public function event(string $name, array $props = [], ?Revenue $revenue = null, ?string $url = null, ?string $referrer = null, ?string $route = null): void
     {
         $pageUrl = $this->resolveUrl($url);
-        $redaction = new RouteRedaction($this->redactRoutes, $route ?? $this->defaultRoute());
+        $redaction = new RouteRedaction(
+            $this->redactRoutes,
+            $route ?? $this->defaultRoute(),
+            $this->redactUndecodablePaths,
+        );
         $payload = [
             'n' => $name,
             'd' => $this->domain,

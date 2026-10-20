@@ -10,6 +10,19 @@
   `InvalidArgumentException` at construction, so the API key is never sent in
   clear or to an unexpected host. Local development serves its collector over
   local https.
+- Route redaction masks a path that cannot be decoded (a malformed escape such
+  as `%ZZ`, or invalid UTF-8 once decoded) as `/[redacted]` when a route is
+  configured. The option `redactUndecodablePaths` (`Takt`, default `true`)
+  switches to tolerant matching with `false`: such a path is then matched like
+  any other, so a path matching a route goes out as its template, and only a
+  path matching no route is sent raw. Previously such a path was sent raw.
+- `RouteRedaction::path()` returns the route template when one is set, as the
+  browser SDK does, instead of the path itself.
+- A constrained parameter `{name<regex>}` in a route pattern is enforced: a
+  segment whose value does not match the regex no longer matches the route, so
+  its path is sent as it is. Previously the constraint was ignored and any
+  value was masked. Browser patterns keep the brace form of a constrained
+  parameter, which needs a browser SDK that reads it.
 
 ### Minor Changes
 
@@ -22,6 +35,41 @@
   The matching cost is up to 14 candidate forms compared per path and route:
   seven spellings (the raw path, the `decodeUri` form, and up to five
   `rawurldecode` passes), each also tried with its matrix parameters ignored.
+- A constraint `{name<regex>}` is anchored on the whole segment, cannot match
+  across a `/`, and is matched case-insensitively. The constraint must follow a
+  restricted grammar, not PCRE: alternation only at the top level, atoms that
+  are literals, `.` (any byte except `/`), `\d \D \w \W \s \S`, escaped ASCII
+  punctuation (not `/`) or a class `[...]` without nesting, quantifiers
+  `* + ? {n} {n,} {n,m}` with bounds up to 100 (`{n}` is not counted as a
+  variable quantifier, `{,m}` is refused, `{0}` is allowed), no lazy or
+  possessive quantifiers, no two quantifiers in a row, at most two variable
+  quantifiers per constraint (`{n,n}` counts), at most 100 characters, and no
+  empty branch. Literals exclude `<` and `>`; a class range cannot end on `-`,
+  an escape or `<`/`>`, nor span `/`, and a `]` cannot open a class. Groups,
+  lookarounds, backreferences, anchors and `/` are refused. The grammar counts
+  bytes, not characters: `\d`, `\w` and `\s` are ASCII only.
+- A route is unusable when one of its constraints is refused, when its
+  constraints hold more than two variable quantifiers in total, when one
+  segment holds more than one constrained parameter or more than two variable
+  quantifiers (each unconstrained parameter counts as one), or when a stray `{`
+  or `}` remains in a segment. An unusable route masks, as `/[redacted]`, every
+  path with the same shape (each parameter reads as any value, and the
+  parameters of one segment read as one value); other paths are unaffected. A
+  value longer than 256 bytes for a constrained parameter is masked before the
+  constraint is checked. A `/` inside `<...>` does not split the route into
+  segments.
+- A route is also unusable when its ambiguity degree exceeds one: the sum,
+  over its segments, of each segment's variable quantifiers (unconstrained
+  parameters included, and the `?` of an optional parameter counts as one more)
+  minus one, floored at zero per segment. `/{a}{b}/{c}` is accepted,
+  `/{a}{b}/{c}{d}`, `/{p<a*a*>}/{q}{r}` and `/{a?}/{b}{c}` are refused, and
+  `/{a?}/{b}` is accepted.
+- A route holding more than one REST segment is unusable. A REST segment is
+  `**`, `*name`, `:name*`, `:name+` or `[...name]`, and it counts zero in the
+  ambiguity degree. `/a/**/b` is accepted; `/a/**/b/**` and `/a/**/b/**/c` are
+  refused. The shape of an unusable route with a REST segment keeps the
+  segments before the first REST segment, one `**`, and the segments after the
+  last one.
 
 ## 0.6.1
 
