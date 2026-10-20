@@ -19,7 +19,7 @@ final class RouteRedaction
     private const MAX_REST_SEGMENTS = 1;
     private const MAX_SEGMENT_LENGTH = 256;
     private const FORBIDDEN_URL_CHARS = '~[\x00-\x1F\x7F\\\\]~';
-    private const HOST = '~^(?:\[[0-9a-f:.]+\]|[^\x00-\x20\x7F#%/:<>?@\[\]\\\\^|]+)$~i';
+    private const HOST = '~^(?:\[[0-9a-f:.]+\]|[^\x00-\x20\x7F-\xFF#%/:<>?@\[\]\\\\^|]+)$~i';
 
     /** @var list<array{output:string,regex:string,loose:string,unusable:bool}> */
     private readonly array $routes;

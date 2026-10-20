@@ -718,6 +718,22 @@ final class RouteRedactionTest extends TestCase
         yield 'trailing space' => ['https://ex.com/verify/abc '];
         yield 'space in the host' => ['https://ex .com/verify/abc'];
         yield 'invalid port' => ['https://ex.com:abc/verify/abc'];
+        yield 'fullwidth solidus in the host' => ['https://ex／verify／TOKEN/'];
+        yield 'fullwidth question mark in the host' => ['https://ex？verify？TOKEN'];
+        yield 'fullwidth colon in the host' => ['https://ex：verify/TOKEN'];
+        yield 'no-break space in the host' => ["https://ex\xC2\xA0.com/verify/abc"];
+    }
+
+    public function test_routes_mode_masks_a_punycode_host(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame('https://xn--exemple-cva.test/verify/[token]', $redaction->page('https://xn--exemple-cva.test/verify/abc'));
+    }
+
+    public function test_template_mode_reduces_a_punycode_referrer_to_its_origin(): void
+    {
+        $redaction = new RouteRedaction([], '/verify/[token]');
+        $this->assertSame('https://xn--exemple-cva.test/', $redaction->referrer('https://xn--exemple-cva.test/verify/abc', 'https://ex.com/verify/abc'));
     }
 
     #[DataProvider('ambiguousUrls')]
