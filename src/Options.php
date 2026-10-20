@@ -50,6 +50,7 @@ final class Options
         public readonly bool $routeTemplates = false,
         public readonly ?string $routeTemplate = null,
     ) {
+        EndpointPolicy::assertSecure($endpoint);
     }
 
     public function withRouteTemplate(?string $routeTemplate): self

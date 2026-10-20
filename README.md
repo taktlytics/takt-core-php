@@ -53,6 +53,8 @@ By default the snippet ingests to the hosted Takt origin — `https://taktlytics
 - `endpoint: 'https://collect.example.com/api/event'` — any custom absolute collector URL.
 - `scriptOrigin: 'https://t.example.com'` — let the tracker derive `{scriptOrigin}/api/event` (first-party, anti-adblock). `endpoint` wins over `scriptOrigin`.
 
+An `endpoint` over plain `http://` is refused with an `InvalidArgumentException`, because the server client sends the API key as a Bearer header on every call. `http://localhost`, `http://127.0.0.0/8` and `http://[::1]` stay accepted for local development. Use `https://` for any other host.
+
 Autocapture is opt-in and bundled into the vendored `takt.auto.js`. Each toggle adds a token to a single `data-auto` attribute the tracker reads:
 
 - `outbound: true` — outbound link clicks (`outbound`)
@@ -108,6 +110,8 @@ new Options(
 ```
 
 `redactRoutes` lists the sensitive routes. A matching path is sent as the pattern, every other path keeps its real value. Patterns accept `[param]`, `[[optional]]`, `[...rest]`, `(group)`, `:param`, `:param?`, `*`, `**`, and the Laravel / Symfony syntax `{param}` and `{param?}`. The browser SDK does not read the brace syntax, so the renderer hands it `{token}` as `[token]` and `{page?}` as `[[page]]`: the browser sends `/verify/[token]` where the server client sends `/verify/{token}`. Write bracket patterns if both must report the same row.
+
+Matching is applied to several spellings of the same path, so an encoded or unusual URL cannot slip past a pattern: the raw path, the path with `%2F` decoded as a separator, and the fully decoded path are all tried, matching is case-insensitive, and repeated slashes are collapsed. If a pattern cannot be evaluated (the PCRE engine gives up on a very long segment), the path is sent as `/[redacted]` rather than in clear.
 
 ```php
 new Options(domain: 'example.com', mode: Mode::Sdk, routeTemplates: true, routeTemplate: '/users/{id}');

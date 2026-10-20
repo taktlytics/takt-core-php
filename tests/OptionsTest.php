@@ -159,4 +159,30 @@ final class OptionsTest extends TestCase
         $o = Options::fromArray(['domain' => 'a.com', 'mode' => 'sdk']);
         $this->assertSame(Mode::Sdk, $o->mode);
     }
+
+    public function test_plain_http_endpoint_outside_loopback_is_refused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: 'http://takt.example.com/api/event');
+    }
+
+    public function test_from_array_refuses_plain_http_endpoint_outside_loopback(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Options::fromArray(['domain' => 'a.com', 'endpoint' => 'http://takt.example.com']);
+    }
+
+    public function test_plain_http_endpoint_on_loopback_is_accepted(): void
+    {
+        $o = new Options(domain: 'a.com', endpoint: 'http://localhost:8000/api/event');
+        $this->assertSame('http://localhost:8000/api/event', $o->endpoint);
+    }
+
+    public function test_relative_endpoint_is_accepted(): void
+    {
+        $o = new Options(domain: 'a.com', endpoint: '/api/event');
+        $this->assertSame('/api/event', $o->endpoint);
+    }
 }
