@@ -18,7 +18,7 @@ final class SnippetRenderer
         }
         // exclude lives only in the full SDK (the ≤ 1 kB minimal snippet omits it).
         // Fail fast rather than silently drop a privacy control the caller believes
-        // is active — a dropped exclusion would leak the very paths it should hide.
+        // is active: a dropped exclusion would leak the very paths it should hide.
         if ($options->exclude !== [] && $options->mode !== Mode::Sdk) {
             throw new \InvalidArgumentException('Takt: exclude requires Mode::Sdk; the minimal snippet does not support path exclusion.');
         }
