@@ -27,6 +27,11 @@
   Such a URL used to leak its path, for example `https://ex.com\verify\TOKEN`
   against `/verify/[token]`. Nothing is normalised. With no masking option
   configured, nothing changes.
+- When a masking option is configured, a host must be printable ASCII. A host
+  with a non-ASCII character is unparsable: some of them (a full-width `／`, `？`
+  or `：`, a no-break space) are read as delimiters by a browser, so the page goes
+  out with an empty `u` and the referrer is dropped. Punycode hosts (`xn--...`)
+  are unaffected.
 
 ## 0.7.0
 
