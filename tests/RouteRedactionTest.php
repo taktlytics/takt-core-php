@@ -530,6 +530,31 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/[redacted]', (new RouteRedaction(['/x/{p<.>}']))->path('/x/%FF'));
     }
 
+    /** @return iterable<string,array{string,string}> */
+    public static function routesWithTwoRestSegments(): iterable
+    {
+        yield 'two double stars' => ['/a/**/b/**', '/a/1/b/2'];
+        yield 'named stars around a literal' => ['/*x/a/*y/b', '/1/a/2/b'];
+        yield 'rest parameter and a plus-rest' => ['/a/[...rest]/b/:tail*', '/a/1/b/2'];
+    }
+
+    #[DataProvider('routesWithTwoRestSegments')]
+    public function test_route_with_two_rest_segments_masks_its_shape(string $route, string $path): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction([$route]))->path($path));
+    }
+
+    public function test_route_with_one_rest_segment_is_accepted(): void
+    {
+        $this->assertSame('/a/*/b', (new RouteRedaction(['/a/**/b']))->path('/a/1/2/b'));
+    }
+
+    public function test_optional_parameter_counts_one_more_variable_in_the_degree(): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/{a?}/{b}{c}']))->path('/1/23'));
+        $this->assertSame('/{a}/{b}', (new RouteRedaction(['/{a?}/{b}']))->path('/1/2'));
+    }
+
     public function test_overlong_segment_masks_even_when_the_constraint_breaks(): void
     {
         $redaction = new RouteRedaction(['/x/{p<\\d+>}']);

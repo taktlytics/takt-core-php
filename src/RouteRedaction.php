@@ -16,6 +16,7 @@ final class RouteRedaction
     private const MAX_ROUTE_VARIABLE_QUANTIFIERS = 2;
     private const MAX_SEGMENT_VARIABLE_QUANTIFIERS = 2;
     private const MAX_AMBIGUITY_DEGREE = 1;
+    private const MAX_REST_SEGMENTS = 1;
     private const MAX_SEGMENT_LENGTH = 256;
 
     /** @var list<array{output:string,regex:string,loose:string,unusable:bool}> */
@@ -146,20 +147,21 @@ final class RouteRedaction
     private static function route(string $pattern): array
     {
         $segments = self::segments($pattern);
-        $state = ['unusable' => false, 'variables' => 0, 'ambiguity' => 0];
+        $state = ['unusable' => false, 'variables' => 0, 'ambiguity' => 0, 'rest' => 0];
         $strict = self::build($segments, 'strict', $state);
-        $looseState = ['unusable' => false, 'variables' => 0, 'ambiguity' => 0];
+        $looseState = ['unusable' => false, 'variables' => 0, 'ambiguity' => 0, 'rest' => 0];
         $loose = self::build($segments, 'loose', $looseState);
-        $shapeState = ['unusable' => false, 'variables' => 0, 'ambiguity' => 0];
-        $shape = self::build($segments, 'shape', $shapeState);
+        $shapeState = ['unusable' => false, 'variables' => 0, 'ambiguity' => 0, 'rest' => 0];
+        $shape = self::build(self::shapeSegments($segments), 'shape', $shapeState);
         $unusable = $state['unusable']
             || $state['variables'] > self::MAX_ROUTE_VARIABLE_QUANTIFIERS
-            || $state['ambiguity'] > self::MAX_AMBIGUITY_DEGREE;
+            || $state['ambiguity'] > self::MAX_AMBIGUITY_DEGREE
+            || $state['rest'] > self::MAX_REST_SEGMENTS;
 
         return [
             'output' => self::canonical($pattern),
             'regex' => self::delimited($unusable ? $shape : $strict),
-            'loose' => self::delimited($loose),
+            'loose' => self::delimited($unusable ? $shape : $loose),
             'unusable' => $unusable,
         ];
     }
@@ -171,17 +173,42 @@ final class RouteRedaction
 
     /**
      * @param list<string> $segments
-     * @param array{unusable:bool,variables:int,ambiguity:int} $state
+     * @return list<string>
+     */
+    private static function shapeSegments(array $segments): array
+    {
+        $rests = [];
+        foreach ($segments as $index => $segment) {
+            if (preg_match(self::REST, $segment) === 1) {
+                $rests[] = $index;
+            }
+        }
+        if ($rests === []) {
+            return $segments;
+        }
+
+        return [...array_slice($segments, 0, $rests[0]), '**', ...array_slice($segments, $rests[array_key_last($rests)] + 1)];
+    }
+
+    private static function degree(int $variables): int
+    {
+        return max(0, $variables - 1);
+    }
+
+    /**
+     * @param list<string> $segments
+     * @param array{unusable:bool,variables:int,ambiguity:int,rest:int} $state
      */
     private static function build(array $segments, string $mode, array &$state): string
     {
         $source = '';
         foreach ($segments as $segment) {
             if (preg_match(self::REST, $segment) === 1) {
+                $state['rest']++;
                 $source .= '(?:/.*)?';
             } elseif (preg_match(self::OPTIONAL, $segment) === 1) {
                 $piece = self::paramSource($segment, $mode, $state);
-                $state['ambiguity'] += max(0, $piece['variables'] - 1);
+                $state['ambiguity'] += self::degree($piece['variables'] + 1);
                 $source .= '(?:/' . $piece['source'] . ')?';
             } else {
                 $source .= '/' . self::segmentSource($segment, $mode, $state);
@@ -192,7 +219,7 @@ final class RouteRedaction
     }
 
     /**
-     * @param array{unusable:bool,variables:int,ambiguity:int} $state
+     * @param array{unusable:bool,variables:int,ambiguity:int,rest:int} $state
      */
     private static function segmentSource(string $segment, string $mode, array &$state): string
     {
@@ -207,7 +234,7 @@ final class RouteRedaction
         }
         $constrained = count(array_filter($pieces, static fn (array $piece): bool => $piece['constrained']));
         $variables = array_sum(array_column($pieces, 'variables'));
-        $state['ambiguity'] += max(0, $variables - 1);
+        $state['ambiguity'] += self::degree($variables);
         if ($stray || $constrained > 1 || $variables > self::MAX_SEGMENT_VARIABLE_QUANTIFIERS) {
             $state['unusable'] = true;
 
@@ -237,7 +264,7 @@ final class RouteRedaction
     }
 
     /**
-     * @param array{unusable:bool,variables:int,ambiguity:int} $state
+     * @param array{unusable:bool,variables:int,ambiguity:int,rest:int} $state
      * @return array{source:string,variables:int,constrained:bool}
      */
     private static function paramSource(string $param, string $mode, array &$state): array

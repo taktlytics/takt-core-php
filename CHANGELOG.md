@@ -60,8 +60,16 @@
   segments.
 - A route is also unusable when its ambiguity degree exceeds one: the sum,
   over its segments, of each segment's variable quantifiers (unconstrained
-  parameters included) minus one, floored at zero per segment. `/{a}{b}/{c}` is
-  accepted, `/{a}{b}/{c}{d}` and `/{p<a*a*>}/{q}{r}` are refused.
+  parameters included, and the `?` of an optional parameter counts as one more)
+  minus one, floored at zero per segment. `/{a}{b}/{c}` is accepted,
+  `/{a}{b}/{c}{d}`, `/{p<a*a*>}/{q}{r}` and `/{a?}/{b}{c}` are refused, and
+  `/{a?}/{b}` is accepted.
+- A route holding more than one REST segment is unusable. A REST segment is
+  `**`, `*name`, `:name*`, `:name+` or `[...name]`, and it counts zero in the
+  ambiguity degree. `/a/**/b` is accepted; `/a/**/b/**` and `/a/**/b/**/c` are
+  refused. The shape of an unusable route with a REST segment keeps the
+  segments before the first REST segment, one `**`, and the segments after the
+  last one.
 
 ## 0.6.1
 
