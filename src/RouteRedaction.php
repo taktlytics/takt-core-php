@@ -10,7 +10,7 @@ final class RouteRedaction
     private const PARAM = '#\[[^\]]+\]|:\w+(\([^)]*\))?|\{\w+(<[^>]*>)?(\?[^}]*)?\}#';
     private const BRACE = '#\{(\w+)(<[^>]*>)?(\?[^}]*)?\}#';
     private const RESERVED_ESCAPES = ['23', '24', '26', '2B', '2C', '2F', '3A', '3B', '3D', '3F', '40'];
-    private const FAILED_OUTPUT = '/[redacted]';
+    private const REDACTED_PATH = '/[redacted]';
     private const MAX_DECODE_PASSES = 5;
     private const CONSTRAINT_DELIMITER = "\x01";
     private const MAX_ROUTE_VARIABLE_QUANTIFIERS = 2;
@@ -18,17 +18,22 @@ final class RouteRedaction
     private const MAX_AMBIGUITY_DEGREE = 1;
     private const MAX_REST_SEGMENTS = 1;
     private const MAX_SEGMENT_LENGTH = 256;
+    private const FORBIDDEN_URL_CHARS = '~[\x00-\x1F\x7F\\\\]~';
+    private const HOST = '~^(?:\[[0-9a-f:.]+\]|[A-Za-z0-9._-]+)$~i';
 
     /** @var list<array{output:string,regex:string,loose:string,unusable:bool}> */
     private readonly array $routes;
 
     private readonly ?string $template;
 
+    private readonly bool $templated;
+
     /** @param list<string> $redactRoutes */
     public function __construct(
         array $redactRoutes = [],
         ?string $routeTemplate = null,
         private readonly bool $redactUndecodablePaths = true,
+        bool $templated = false,
     ) {
         $routes = [];
         foreach ($redactRoutes as $pattern) {
@@ -40,6 +45,7 @@ final class RouteRedaction
         $this->routes = $routes;
         $template = trim($routeTemplate ?? '');
         $this->template = $template !== '' ? self::canonical($template) : null;
+        $this->templated = $templated || $this->template !== null;
     }
 
     public static function canonical(string $template): string
@@ -68,17 +74,21 @@ final class RouteRedaction
 
     public function templated(): bool
     {
-        return $this->template !== null;
+        return $this->templated;
     }
 
     public function isEmpty(): bool
     {
-        return $this->template === null && $this->routes === [];
+        return !$this->templated && $this->routes === [];
     }
 
     public function path(string $pathname): string
     {
-        return $this->template ?? $this->redactedPath($pathname) ?? $pathname;
+        if ($this->templated) {
+            return $this->templatedPath($pathname);
+        }
+
+        return $this->redactedPath($pathname) ?? $pathname;
     }
 
     public function page(string $url): string
@@ -86,21 +96,43 @@ final class RouteRedaction
         if ($this->isEmpty()) {
             return $url;
         }
+        $parts = self::parse($url);
+        if ($parts === null) {
+            return '';
+        }
+        $path = $this->templated ? $this->templatedPath($parts['path']) : $this->redactedPath($parts['path']);
 
-        return $this->rewrite($url, $this->template);
+        return $path === null ? $url : $parts['origin'] . $path;
     }
 
     public function referrer(string $url, string $pageUrl): string
     {
+        if ($this->templated) {
+            $origin = self::httpOrigin($url);
+
+            return $origin === null ? '' : $origin . '/';
+        }
         $origin = self::origin($url);
-        if ($origin === null || $origin !== self::origin($pageUrl)) {
+        if ($origin === null) {
+            return $this->routes === [] ? $url : '';
+        }
+        if ($origin !== self::origin($pageUrl)) {
             return $url;
         }
-        if ($this->template !== null) {
-            return $origin . '/';
-        }
 
-        return $this->routes !== [] ? $this->rewrite($url, null) : $url;
+        return $this->routes !== [] ? $this->page($url) : $url;
+    }
+
+    private static function httpOrigin(string $url): ?string
+    {
+        $parts = self::parse($url);
+
+        return $parts !== null && in_array($parts['scheme'], ['http', 'https'], true) ? $parts['origin'] : null;
+    }
+
+    private function templatedPath(string $pathname): string
+    {
+        return $this->template ?? $this->redactedPath($pathname) ?? self::REDACTED_PATH;
     }
 
     /** @return list<string> */
@@ -319,26 +351,26 @@ final class RouteRedaction
         }
         $forms = self::candidateForms($pathname, $this->redactUndecodablePaths);
         if ($forms === null) {
-            return self::FAILED_OUTPUT;
+            return self::REDACTED_PATH;
         }
         $candidates = array_values(array_unique(array_map(self::normalize(...), $forms)));
         foreach ($this->routes as $route) {
             foreach ($candidates as $candidate) {
                 $looseMatch = preg_match($route['loose'], $candidate, $captures);
                 if ($looseMatch === false) {
-                    return self::FAILED_OUTPUT;
+                    return self::REDACTED_PATH;
                 }
                 if ($looseMatch === 1 && self::overlong($captures)) {
-                    return self::FAILED_OUTPUT;
+                    return self::REDACTED_PATH;
                 }
             }
             foreach ($candidates as $candidate) {
                 $matched = preg_match($route['regex'], $candidate);
                 if ($matched === false) {
-                    return self::FAILED_OUTPUT;
+                    return self::REDACTED_PATH;
                 }
                 if ($matched === 1) {
-                    return $route['unusable'] ? self::FAILED_OUTPUT : $route['output'];
+                    return $route['unusable'] ? self::REDACTED_PATH : $route['output'];
                 }
             }
         }
@@ -432,40 +464,35 @@ final class RouteRedaction
         return ($absolute ? '/' : '') . implode('/', $output);
     }
 
-    private function rewrite(string $url, ?string $template): string
-    {
-        $parts = self::parse($url);
-        if ($parts === null) {
-            return $url;
-        }
-        $path = $template ?? $this->redactedPath($parts['path']);
-        if ($path === null) {
-            return $url;
-        }
-
-        return $parts['origin'] . $path;
-    }
-
     private static function origin(string $url): ?string
     {
         return self::parse($url)['origin'] ?? null;
     }
 
-    /** @return array{origin:string,path:string}|null */
+    /** @return array{scheme:string,origin:string,path:string}|null */
     private static function parse(string $url): ?array
     {
-        $parts = parse_url(trim($url));
+        if ($url !== trim($url) || preg_match(self::FORBIDDEN_URL_CHARS, $url) === 1) {
+            return null;
+        }
+        $parts = parse_url($url);
         if ($parts === false || !isset($parts['scheme'], $parts['host']) || $parts['host'] === '') {
             return null;
         }
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return null;
+        }
         $scheme = strtolower($parts['scheme']);
+        if (preg_match(self::HOST, $parts['host']) !== 1) {
+            return null;
+        }
         $origin = $scheme . '://' . strtolower($parts['host']);
         $port = $parts['port'] ?? null;
         if ($port !== null && !($scheme === 'http' && $port === 80) && !($scheme === 'https' && $port === 443)) {
             $origin .= ':' . $port;
         }
         $path = $parts['path'] ?? '';
-        return ['origin' => $origin, 'path' => $path !== '' ? $path : '/'];
+        return ['scheme' => $scheme, 'origin' => $origin, 'path' => $path !== '' ? $path : '/'];
     }
 
     private static function decodeUri(string $path): string

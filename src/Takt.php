@@ -79,10 +79,12 @@ final class Takt
     public function event(string $name, array $props = [], ?Revenue $revenue = null, ?string $url = null, ?string $referrer = null, ?string $route = null): void
     {
         $pageUrl = $this->resolveUrl($url);
+        $explicitRoute = self::nonBlank($route);
         $redaction = new RouteRedaction(
             $this->redactRoutes,
-            $route ?? $this->defaultRoute(),
+            $explicitRoute ?? $this->defaultRoute(),
             $this->redactUndecodablePaths,
+            $explicitRoute !== null || $this->routeConfigured(),
         );
         $payload = [
             'n' => $name,
@@ -106,6 +108,11 @@ final class Takt
         $this->event('pageview', [], null, $url, $referrer, $route);
     }
 
+    private function routeConfigured(): bool
+    {
+        return $this->route instanceof \Closure || (is_string($this->route) && self::nonBlank($this->route) !== null);
+    }
+
     private function defaultRoute(): ?string
     {
         if ($this->route instanceof \Closure) {
@@ -115,10 +122,17 @@ final class Takt
                 return null;
             }
 
-            return is_string($route) ? $route : null;
+            return is_string($route) ? self::nonBlank($route) : null;
         }
 
-        return $this->route;
+        return self::nonBlank($this->route);
+    }
+
+    private static function nonBlank(?string $value): ?string
+    {
+        $trimmed = trim($value ?? '');
+
+        return $trimmed !== '' ? $trimmed : null;
     }
 
     /**

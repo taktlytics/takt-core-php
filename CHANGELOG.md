@@ -1,5 +1,43 @@
 # vskstudio/takt-core-php
 
+## 0.7.1
+
+### Patch Changes
+
+- In template mode (`routeTemplate` / `routeTemplates`), the referrer is always
+  reduced to its origin, whatever its host: a cross-host referrer used to go out
+  whole, path included. A referrer that is not `http(s)` is now dropped (`r` is
+  empty) instead of being kept.
+- Bump the CDN/ESM tracker pins to `@vskstudio/takt-core@0.12.1`, which carries
+  the same referrer rules for the browser SDK. `bin/sync-bundle.sh` now defaults
+  to 0.12.1.
+- In template mode, a page URL is never sent raw. When the route resolver
+  returns nothing, returns a blank string or throws, the URL is redacted as the
+  browser SDK does: `redactRoutes` applies if one covers the path, otherwise the
+  URL goes out as its origin and `/[redacted]`, without query or hash. A blank
+  `route` counts as absent and falls back to the default resolver. A page URL
+  that cannot be parsed goes out with an empty `u` (refused by the ingest)
+  instead of the raw URL. The same holds with `redactRoutes` alone, without a
+  template. With no masking option configured, nothing changes.
+- A URL that `parse_url` and a browser may read differently is never guessed.
+  When a masking option is configured, a page URL or a referrer containing a
+  backslash, a tab, a line break, another control character, leading or trailing
+  spaces, user information (`user@host`) or a host with a space is treated as
+  unparsable: the page goes out with an empty `u`, and the referrer is dropped.
+  Such a URL used to leak its path, for example `https://ex.com\verify\TOKEN`
+  against `/verify/[token]`. Nothing is normalised. With no masking option
+  configured, nothing changes.
+- When a masking option is configured, a host must be printable ASCII. A host
+  with a non-ASCII character is unparsable: some of them (a full-width `／`, `？`
+  or `：`, a no-break space) are read as delimiters by a browser, so the page goes
+  out with an empty `u` and the referrer is dropped. Punycode hosts (`xn--...`)
+  are unaffected.
+- When a masking option is configured, a host is restricted to letters, digits,
+  `.`, `-` and `_`, or to an IPv6 literal in brackets. A sub-delimiter such as
+  `;` or `!` in the host used to leave the path inside the origin, so such a URL
+  is now unparsable: the page goes out with an empty `u` and the referrer is
+  dropped.
+
 ## 0.7.0
 
 ### Breaking Changes

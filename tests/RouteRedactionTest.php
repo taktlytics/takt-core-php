@@ -602,10 +602,16 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('https://localhost:8000/verify/[token]', $redaction->page('https://localhost:8000/verify/abc'));
     }
 
-    public function test_page_leaves_an_unparsable_url_untouched(): void
+    public function test_page_empties_an_unparsable_url_when_masking_is_configured(): void
     {
         $redaction = new RouteRedaction(['/verify/[token]']);
-        $this->assertSame('/verify/abc', $redaction->page('/verify/abc'));
+        $this->assertSame('', $redaction->page('/verify/abc'));
+        $this->assertSame('', $redaction->page('https://example.com:abc/verify/abc'));
+    }
+
+    public function test_page_leaves_an_unparsable_url_untouched_without_masking(): void
+    {
+        $this->assertSame('/verify/abc', (new RouteRedaction())->page('/verify/abc'));
     }
 
     public function test_template_replaces_every_page_path(): void
@@ -646,11 +652,138 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('https://example.com/', $redaction->referrer('https://example.com/blog/a?x=1', 'https://example.com/blog/b'));
     }
 
+    public function test_templated_mode_reduces_cross_host_referrer_to_origin(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/[slug]');
+        $this->assertSame(
+            'https://other.example/',
+            $redaction->referrer('https://other.example/verify/abc?x=1', 'https://example.com/blog/b'),
+        );
+    }
+
+    public function test_templated_without_template_masks_a_path_no_pattern_covers(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]'], null, true, true);
+        $this->assertTrue($redaction->templated());
+        $this->assertSame('https://example.com/[redacted]', $redaction->page('https://example.com/users/42?x=1#h'));
+        $this->assertSame('/[redacted]', $redaction->path('/users/42'));
+    }
+
+    public function test_templated_without_template_uses_a_covering_pattern(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]'], null, true, true);
+        $this->assertSame('https://example.com/verify/[token]', $redaction->page('https://example.com/verify/abc?x=1'));
+        $this->assertSame('/verify/[token]', $redaction->path('/verify/abc'));
+    }
+
+    public function test_templated_page_with_an_unparsable_url_is_empty(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/[slug]');
+        $this->assertSame('', $redaction->page('https://example.com:abc/blog/hello'));
+        $this->assertSame('', $redaction->page('/blog/hello'));
+    }
+
+    public function test_templated_referrer_is_reduced_even_without_template(): void
+    {
+        $redaction = new RouteRedaction([], null, true, true);
+        $this->assertSame('https://other.example/', $redaction->referrer('https://other.example/a?x=1', 'https://example.com/b'));
+    }
+
+    public function test_templated_mode_drops_non_http_referrer(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/[slug]');
+        $this->assertSame('', $redaction->referrer('android-app://com.example/verify/abc', 'https://example.com/blog/b'));
+    }
+
     public function test_browser_pattern_translates_brace_syntax(): void
     {
         $this->assertSame('/verify/[token]', RouteRedaction::browserPattern('/verify/{token}'));
         $this->assertSame('/posts/[[page]]', RouteRedaction::browserPattern('/posts/{page?}'));
         $this->assertSame('/blog/{page<\\d+>}', RouteRedaction::browserPattern('/blog/{page<\\d+>}'));
         $this->assertSame('/reset/:code', RouteRedaction::browserPattern('/reset/:code'));
+    }
+
+    /** @return iterable<string,array{string}> */
+    public static function ambiguousUrls(): iterable
+    {
+        yield 'backslash in the host' => ['https://ex.com\\verify\\TOKEN'];
+        yield 'backslash in the path' => ['https://ex.com/verify\\TOKEN'];
+        yield 'tab in the host' => ["https://ex.com\tverify/abc"];
+        yield 'newline in the path' => ["https://ex.com/verify\n/abc"];
+        yield 'carriage return at the end' => ["https://ex.com/verify/abc\r"];
+        yield 'nul byte at the end' => ["https://ex.com/verify/abc\0"];
+        yield 'userinfo' => ['https://user@ex.com/verify/abc'];
+        yield 'userinfo with a password' => ['https://ex.com:x@evil.test/verify/abc'];
+        yield 'leading space' => [' https://ex.com/verify/abc'];
+        yield 'trailing space' => ['https://ex.com/verify/abc '];
+        yield 'space in the host' => ['https://ex .com/verify/abc'];
+        yield 'invalid port' => ['https://ex.com:abc/verify/abc'];
+        yield 'fullwidth solidus in the host' => ['https://ex／verify／TOKEN/'];
+        yield 'fullwidth question mark in the host' => ['https://ex？verify？TOKEN'];
+        yield 'fullwidth colon in the host' => ['https://ex：verify/TOKEN'];
+        yield 'no-break space in the host' => ["https://ex\xC2\xA0.com/verify/abc"];
+        yield 'semicolon in the host' => ['https://ex.com;TOKEN/verify/abc'];
+        yield 'exclamation mark in the host' => ['https://ex!TOKEN.com/verify/abc'];
+    }
+
+    /** @return iterable<string,array{string,string}> */
+    public static function legitimateHosts(): iterable
+    {
+        yield 'IPv6 with a port' => ['https://[::1]:8080/verify/abc', 'https://[::1]:8080/verify/[token]'];
+        yield 'IPv4' => ['https://192.0.2.1/verify/abc', 'https://192.0.2.1/verify/[token]'];
+        yield 'underscore' => ['https://my_host.example/verify/abc', 'https://my_host.example/verify/[token]'];
+        yield 'punycode' => ['https://xn--exemple-cva.test/verify/abc', 'https://xn--exemple-cva.test/verify/[token]'];
+    }
+
+    #[DataProvider('legitimateHosts')]
+    public function test_legitimate_host_is_masked_in_routes_mode(string $url, string $expected): void
+    {
+        $this->assertSame($expected, (new RouteRedaction(['/verify/[token]']))->page($url));
+    }
+
+    public function test_routes_mode_masks_a_punycode_host(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame('https://xn--exemple-cva.test/verify/[token]', $redaction->page('https://xn--exemple-cva.test/verify/abc'));
+    }
+
+    public function test_template_mode_reduces_a_punycode_referrer_to_its_origin(): void
+    {
+        $redaction = new RouteRedaction([], '/verify/[token]');
+        $this->assertSame('https://xn--exemple-cva.test/', $redaction->referrer('https://xn--exemple-cva.test/verify/abc', 'https://ex.com/verify/abc'));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_routes_mode_empties_an_ambiguous_page_url(string $url): void
+    {
+        $this->assertSame('', (new RouteRedaction(['/verify/[token]']))->page($url));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_template_mode_empties_an_ambiguous_page_url(string $url): void
+    {
+        $this->assertSame('', (new RouteRedaction([], '/verify/[token]'))->page($url));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_routes_mode_drops_an_ambiguous_referrer(string $url): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame('', $redaction->referrer($url, 'https://ex.com/verify/abc'));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_template_mode_drops_an_ambiguous_referrer(string $url): void
+    {
+        $redaction = new RouteRedaction([], '/verify/[token]');
+        $this->assertSame('', $redaction->referrer($url, 'https://ex.com/verify/abc'));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_an_ambiguous_url_is_untouched_without_masking(string $url): void
+    {
+        $redaction = new RouteRedaction();
+        $this->assertSame($url, $redaction->page($url));
+        $this->assertSame($url, $redaction->referrer($url, 'https://ex.com/verify/abc'));
     }
 }
