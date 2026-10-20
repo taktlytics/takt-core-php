@@ -655,6 +655,34 @@ final class RouteRedactionTest extends TestCase
         );
     }
 
+    public function test_templated_without_template_masks_a_path_no_pattern_covers(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]'], null, true, true);
+        $this->assertTrue($redaction->templated());
+        $this->assertSame('https://example.com/[redacted]', $redaction->page('https://example.com/users/42?x=1#h'));
+        $this->assertSame('/[redacted]', $redaction->path('/users/42'));
+    }
+
+    public function test_templated_without_template_uses_a_covering_pattern(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]'], null, true, true);
+        $this->assertSame('https://example.com/verify/[token]', $redaction->page('https://example.com/verify/abc?x=1'));
+        $this->assertSame('/verify/[token]', $redaction->path('/verify/abc'));
+    }
+
+    public function test_templated_page_with_an_unparsable_url_is_empty(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/[slug]');
+        $this->assertSame('', $redaction->page('https://example.com:abc/blog/hello'));
+        $this->assertSame('', $redaction->page('/blog/hello'));
+    }
+
+    public function test_templated_referrer_is_reduced_even_without_template(): void
+    {
+        $redaction = new RouteRedaction([], null, true, true);
+        $this->assertSame('https://other.example/', $redaction->referrer('https://other.example/a?x=1', 'https://example.com/b'));
+    }
+
     public function test_templated_mode_drops_non_http_referrer(): void
     {
         $redaction = new RouteRedaction([], '/blog/[slug]');

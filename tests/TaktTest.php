@@ -418,8 +418,8 @@ final class TaktTest extends TestCase
             return $current;
         });
 
-        $takt->pageview('https://example.com/users/42');
-        $this->assertSame('https://example.com/users/42', self::lastBody($mock)['u']);
+        $takt->pageview('https://example.com/users/42?x=1#h');
+        $this->assertSame('https://example.com/[redacted]', self::lastBody($mock)['u']);
 
         $current = '/users/{id}';
         $takt->pageview('https://example.com/users/42');
@@ -432,8 +432,81 @@ final class TaktTest extends TestCase
         $mock->addResponse(new Response(202));
         $this->makeRedactingClient($mock, [])
             ->withRoute(static fn (): string => throw new \LogicException('no route'))
-            ->pageview('https://example.com/users/42');
+            ->event('Viewed', url: 'https://example.com/users/42?x=1#h');
 
-        $this->assertSame('https://example.com/users/42', self::lastBody($mock)['u']);
+        $body = self::lastBody($mock);
+        $this->assertSame('Viewed', $body['n']);
+        $this->assertSame('https://example.com/[redacted]', $body['u']);
+    }
+
+    /** @return iterable<string, array{\Closure(): ?string}> */
+    public static function unusableRouteResolvers(): iterable
+    {
+        yield 'null' => [static fn (): ?string => null];
+        yield 'empty string' => [static fn (): string => ''];
+        yield 'blank string' => [static fn (): string => '   '];
+        yield 'throws' => [static fn (): string => throw new \LogicException('no route')];
+    }
+
+    #[DataProvider('unusableRouteResolvers')]
+    public function test_unusable_resolver_masks_the_path_when_no_pattern_covers_it(\Closure $resolver): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, ['/verify/[token]'])
+            ->withRoute($resolver)
+            ->pageview('https://example.com/users/42?x=1#h');
+
+        $this->assertSame('https://example.com/[redacted]', self::lastBody($mock)['u']);
+    }
+
+    #[DataProvider('unusableRouteResolvers')]
+    public function test_unusable_resolver_uses_a_covering_redact_route(\Closure $resolver): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, ['/verify/[token]'])
+            ->withRoute($resolver)
+            ->pageview('https://example.com/verify/abc?x=1#h');
+
+        $this->assertSame('https://example.com/verify/[token]', self::lastBody($mock)['u']);
+    }
+
+    public function test_blank_explicit_route_falls_back_to_the_default_resolver(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $mock->addResponse(new Response(202));
+        $takt = $this->makeRedactingClient($mock, [])->withRoute('/users/{id}');
+
+        $takt->pageview('https://example.com/users/42', route: '  ');
+        $this->assertSame('https://example.com/users/{id}', self::lastBody($mock)['u']);
+
+        $takt->pageview('https://example.com/users/42', route: '');
+        $this->assertSame('https://example.com/users/{id}', self::lastBody($mock)['u']);
+    }
+
+    public function test_blank_default_route_leaves_the_url_untouched(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, [])
+            ->withRoute('  ')
+            ->pageview('https://example.com/users/42?x=1');
+
+        $this->assertSame('https://example.com/users/42?x=1', self::lastBody($mock)['u']);
+    }
+
+    public function test_unparsable_page_url_in_template_mode_is_sent_empty_never_raw(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, [])
+            ->withRoute('/users/{id}')
+            ->pageview('/users/42');
+
+        $body = self::lastBody($mock);
+        $this->assertSame('', $body['u']);
+        $this->assertStringNotContainsString('/users/42', (string) json_encode($body));
     }
 }
