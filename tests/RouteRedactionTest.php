@@ -194,6 +194,17 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/orders/%E9/123', $redaction->path('/orders/%E9/123'));
     }
 
+    public function test_undecodable_path_matching_a_route_is_templated_when_masking_is_disabled(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]'], null, false))->path('/orders/123%ZZ'));
+    }
+
+    public function test_path_encoded_six_times_is_masked_when_masking_is_disabled(): void
+    {
+        $path = '/orders'.self::encoded('/123', 6);
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/orders/[id]'], null, false))->path($path));
+    }
+
     public function test_valid_encoded_path_is_matched_in_both_modes(): void
     {
         $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/orders/%C3%A9'));
