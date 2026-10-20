@@ -95,8 +95,7 @@ final class RouteRedactionTest extends TestCase
         $url = 'https://example.com/x/' . str_repeat('a', 2000) . '.json.x?t=1';
         $page = (new RouteRedaction(['/x/:a:b:c.json']))->page($url);
 
-        $this->assertStringNotContainsString('aaaa', $page);
-        $this->assertStringEndsWith('?t=1', $page);
+        $this->assertSame('https://example.com/[redacted]', $page);
     }
 
     public function test_long_run_of_slashes_is_collapsed_before_matching(): void
@@ -117,13 +116,34 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('https://example.com/a', $redaction->page('https://example.com/a'));
     }
 
-    public function test_page_keeps_origin_query_and_hash(): void
+    public function test_page_drops_query_and_hash_when_path_is_masked(): void
     {
         $redaction = new RouteRedaction(['/verify/[token]']);
         $this->assertSame(
-            'https://example.com/verify/[token]?a=1#h',
-            $redaction->page('https://Example.com:443/verify/abc?a=1#h'),
+            'https://example.com/verify/[token]',
+            $redaction->page('https://Example.com:443/verify/abc?token=secret#h'),
         );
+    }
+
+    public function test_page_keeps_query_and_hash_when_path_is_not_masked(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame(
+            'https://example.com/other?a=1#h',
+            $redaction->page('https://example.com/other?a=1#h'),
+        );
+    }
+
+    public function test_double_encoded_separator_is_matched(): void
+    {
+        $this->assertSame('/files/[name]', (new RouteRedaction(['/files/[name]']))->path('/files%252Fsecret'));
+    }
+
+    public function test_dot_segments_are_removed_before_matching(): void
+    {
+        $redaction = new RouteRedaction(['/admin/[x]']);
+        $this->assertSame('/admin/[x]', $redaction->path('/orders/%2e%2e/admin/secret'));
+        $this->assertSame('/admin/[x]', $redaction->path('/admin/x/../../admin/secret'));
     }
 
     public function test_page_keeps_a_non_default_port(): void

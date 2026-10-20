@@ -310,7 +310,7 @@ final class TaktTest extends TestCase
             ->pageview('https://example.com/verify/abc?x=1', 'https://example.com/verify/old');
 
         $body = self::lastBody($mock);
-        $this->assertSame('https://example.com/verify/{token}?x=1', $body['u']);
+        $this->assertSame('https://example.com/verify/{token}', $body['u']);
         $this->assertSame('https://example.com/verify/{token}', $body['r']);
     }
 
