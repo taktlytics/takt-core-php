@@ -13,7 +13,7 @@ final class SnippetRendererTest extends TestCase
     public function test_cdn_mode_emits_loader_with_data_attrs(): void
     {
         $html = (new SnippetRenderer(new Options(domain: 'example.com', outbound: true, mode: Mode::Cdn)))->render();
-        $this->assertStringContainsString('cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.12.2/dist/takt.auto.js', $html);
+        $this->assertStringContainsString('cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.12.3/dist/takt.auto.js', $html);
         $this->assertStringContainsString('takt.auto.js', $html);
         $this->assertStringContainsString('data-domain="example.com"', $html);
         $this->assertStringContainsString('data-auto="outbound"', $html);
@@ -27,7 +27,7 @@ final class SnippetRendererTest extends TestCase
         $this->assertStringContainsString('<script', $html);
         $this->assertStringContainsString('data-domain="example.com"', $html);
         $this->assertStringContainsString('data-auto="downloads"', $html);
-        $this->assertStringContainsString('var takt=', $html);
+        $this->assertStringContainsString("(function(){'use strict';", $html);
         $this->assertStringNotContainsString(' src=', $html);
     }
 
@@ -201,7 +201,7 @@ final class SnippetRendererTest extends TestCase
         )))->render();
         $this->assertStringContainsString('<script type="module"', $html);
         $this->assertStringContainsString('import{init}from', $html);
-        $this->assertStringContainsString('@vskstudio\/takt-core@0.12.2\/+esm', $html);
+        $this->assertStringContainsString('@vskstudio\/takt-core@0.12.3\/+esm', $html);
         $this->assertStringContainsString('init({', $html);
         $this->assertStringContainsString('"domain":"example.com"', $html);
         $this->assertStringContainsString('"sampleRate":0.25', $html);
@@ -370,5 +370,12 @@ final class SnippetRendererTest extends TestCase
             '"pdf","zip","dmg","xlsx","csv","doc","docx","ppt","pptx","rar","7z","gz","mp3","mp4","wav","avi","mov","exe","apk","mkv","txt"',
             $bundle,
         );
+    }
+
+    public function test_vendored_bundle_does_not_overwrite_the_global_takt(): void
+    {
+        $bundle = (string) file_get_contents(__DIR__ . '/../resources/takt.auto.js');
+        $this->assertStringStartsNotWith('var takt=', $bundle);
+        $this->assertStringNotContainsString('var takt=(function(exports)', $bundle);
     }
 }
