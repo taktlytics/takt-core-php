@@ -18,6 +18,8 @@ final class RouteRedaction
     private const MAX_AMBIGUITY_DEGREE = 1;
     private const MAX_REST_SEGMENTS = 1;
     private const MAX_SEGMENT_LENGTH = 256;
+    private const FORBIDDEN_URL_CHARS = '~[\x00-\x1F\x7F\\\\]~';
+    private const HOST = '~^(?:\[[0-9a-f:.]+\]|[^\x00-\x20\x7F#%/:<>?@\[\]\\\\^|]+)$~i';
 
     /** @var list<array{output:string,regex:string,loose:string,unusable:bool}> */
     private readonly array $routes;
@@ -111,7 +113,10 @@ final class RouteRedaction
             return $origin === null ? '' : $origin . '/';
         }
         $origin = self::origin($url);
-        if ($origin === null || $origin !== self::origin($pageUrl)) {
+        if ($origin === null) {
+            return $this->routes === [] ? $url : '';
+        }
+        if ($origin !== self::origin($pageUrl)) {
             return $url;
         }
 
@@ -120,9 +125,9 @@ final class RouteRedaction
 
     private static function httpOrigin(string $url): ?string
     {
-        $scheme = parse_url(trim($url), PHP_URL_SCHEME);
+        $parts = self::parse($url);
 
-        return is_string($scheme) && in_array(strtolower($scheme), ['http', 'https'], true) ? self::origin($url) : null;
+        return $parts !== null && in_array($parts['scheme'], ['http', 'https'], true) ? $parts['origin'] : null;
     }
 
     private function templatedPath(string $pathname): string
@@ -464,21 +469,30 @@ final class RouteRedaction
         return self::parse($url)['origin'] ?? null;
     }
 
-    /** @return array{origin:string,path:string}|null */
+    /** @return array{scheme:string,origin:string,path:string}|null */
     private static function parse(string $url): ?array
     {
-        $parts = parse_url(trim($url));
+        if ($url !== trim($url) || preg_match(self::FORBIDDEN_URL_CHARS, $url) === 1) {
+            return null;
+        }
+        $parts = parse_url($url);
         if ($parts === false || !isset($parts['scheme'], $parts['host']) || $parts['host'] === '') {
             return null;
         }
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return null;
+        }
         $scheme = strtolower($parts['scheme']);
+        if (preg_match(self::HOST, $parts['host']) !== 1) {
+            return null;
+        }
         $origin = $scheme . '://' . strtolower($parts['host']);
         $port = $parts['port'] ?? null;
         if ($port !== null && !($scheme === 'http' && $port === 80) && !($scheme === 'https' && $port === 443)) {
             $origin .= ':' . $port;
         }
         $path = $parts['path'] ?? '';
-        return ['origin' => $origin, 'path' => $path !== '' ? $path : '/'];
+        return ['scheme' => $scheme, 'origin' => $origin, 'path' => $path !== '' ? $path : '/'];
     }
 
     private static function decodeUri(string $path): string

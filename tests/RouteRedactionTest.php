@@ -702,4 +702,55 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/blog/{page<\\d+>}', RouteRedaction::browserPattern('/blog/{page<\\d+>}'));
         $this->assertSame('/reset/:code', RouteRedaction::browserPattern('/reset/:code'));
     }
+
+    /** @return iterable<string,array{string}> */
+    public static function ambiguousUrls(): iterable
+    {
+        yield 'backslash in the host' => ['https://ex.com\\verify\\TOKEN'];
+        yield 'backslash in the path' => ['https://ex.com/verify\\TOKEN'];
+        yield 'tab in the host' => ["https://ex.com\tverify/abc"];
+        yield 'newline in the path' => ["https://ex.com/verify\n/abc"];
+        yield 'carriage return at the end' => ["https://ex.com/verify/abc\r"];
+        yield 'nul byte at the end' => ["https://ex.com/verify/abc\0"];
+        yield 'userinfo' => ['https://user@ex.com/verify/abc'];
+        yield 'userinfo with a password' => ['https://ex.com:x@evil.test/verify/abc'];
+        yield 'leading space' => [' https://ex.com/verify/abc'];
+        yield 'trailing space' => ['https://ex.com/verify/abc '];
+        yield 'space in the host' => ['https://ex .com/verify/abc'];
+        yield 'invalid port' => ['https://ex.com:abc/verify/abc'];
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_routes_mode_empties_an_ambiguous_page_url(string $url): void
+    {
+        $this->assertSame('', (new RouteRedaction(['/verify/[token]']))->page($url));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_template_mode_empties_an_ambiguous_page_url(string $url): void
+    {
+        $this->assertSame('', (new RouteRedaction([], '/verify/[token]'))->page($url));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_routes_mode_drops_an_ambiguous_referrer(string $url): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame('', $redaction->referrer($url, 'https://ex.com/verify/abc'));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_template_mode_drops_an_ambiguous_referrer(string $url): void
+    {
+        $redaction = new RouteRedaction([], '/verify/[token]');
+        $this->assertSame('', $redaction->referrer($url, 'https://ex.com/verify/abc'));
+    }
+
+    #[DataProvider('ambiguousUrls')]
+    public function test_an_ambiguous_url_is_untouched_without_masking(string $url): void
+    {
+        $redaction = new RouteRedaction();
+        $this->assertSame($url, $redaction->page($url));
+        $this->assertSame($url, $redaction->referrer($url, 'https://ex.com/verify/abc'));
+    }
 }
