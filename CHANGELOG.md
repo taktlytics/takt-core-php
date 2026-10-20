@@ -11,6 +11,13 @@
 - Bump the CDN/ESM tracker pins to `@vskstudio/takt-core@0.12.1`, which carries
   the same referrer rules for the browser SDK. `bin/sync-bundle.sh` now defaults
   to 0.12.1.
+- In template mode, a page URL is never sent raw. When the route resolver
+  returns nothing, returns a blank string or throws, the URL is redacted as the
+  browser SDK does: `redactRoutes` applies if one covers the path, otherwise the
+  URL goes out as its origin and `/[redacted]`, without query or hash. A blank
+  `route` counts as absent and falls back to the default resolver. A page URL
+  that cannot be parsed goes out with an empty `u` (refused by the ingest)
+  instead of the raw URL. Outside template mode nothing changes.
 
 ## 0.7.0
 
