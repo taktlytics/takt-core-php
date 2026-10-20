@@ -17,7 +17,7 @@ final class RouteRedaction
     private const MAX_REPEAT = 100;
     private const MAX_VARIABLE_QUANTIFIERS = 2;
     private const MAX_SEGMENT_LENGTH = 256;
-    private const SPECIAL_CHARACTERS = '()[]{}|*+?.\\^$/';
+    private const SPECIAL_CHARACTERS = '()[]{}|*+?.\\^$/<>';
     private const CLASS_ESCAPES = 'dDwWsS';
     private const ASCII_PUNCTUATION = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
 
@@ -108,10 +108,26 @@ final class RouteRedaction
     /** @return list<string> */
     private static function segments(string $template): array
     {
-        preg_match_all('#(?:<[^>]*>|[^/])+#', $template, $matches);
+        $parts = [];
+        $current = '';
+        $inConstraint = false;
+        foreach (str_split($template) as $char) {
+            if ($char === '/' && !$inConstraint) {
+                $parts[] = $current;
+                $current = '';
+                continue;
+            }
+            if ($char === '<') {
+                $inConstraint = true;
+            } elseif ($char === '>') {
+                $inConstraint = false;
+            }
+            $current .= $char;
+        }
+        $parts[] = $current;
         $segments = [];
-        foreach ($matches[0] as $segment) {
-            if (preg_match(self::GROUP, $segment) !== 1) {
+        foreach ($parts as $segment) {
+            if ($segment !== '' && preg_match(self::GROUP, $segment) !== 1) {
                 $segments[] = $segment;
             }
         }
@@ -134,20 +150,17 @@ final class RouteRedaction
     {
         $source = '';
         $constraints = [];
+        $usable = true;
         foreach (self::segments($pattern) as $segment) {
             if (preg_match(self::REST, $segment) === 1) {
                 $source .= '(?:/.*)?';
             } elseif (preg_match(self::OPTIONAL, $segment) === 1) {
                 $source .= self::constraintOf($segment) !== null
-                    ? '(?:/' . self::segmentSource($segment, $constraints) . ')?'
+                    ? '(?:/' . self::segmentSource($segment, $constraints, $usable) . ')?'
                     : '(?:/[^/]+)?';
             } else {
-                $source .= '/' . self::segmentSource($segment, $constraints);
+                $source .= '/' . self::segmentSource($segment, $constraints, $usable);
             }
-        }
-        $usable = true;
-        foreach ($constraints as $constraint) {
-            $usable = $usable && self::isUsableConstraint($constraint['pattern']);
         }
 
         return [
@@ -159,8 +172,13 @@ final class RouteRedaction
     }
 
     /** @param list<array{group:int,pattern:string}> $constraints */
-    private static function segmentSource(string $segment, array &$constraints): string
+    private static function segmentSource(string $segment, array &$constraints, bool &$usable): string
     {
+        if (preg_match('#[{}]#', preg_replace(self::PARAM, '', $segment) ?? $segment) === 1) {
+            $usable = false;
+
+            return '[^/]+';
+        }
         preg_match_all(self::PARAM, $segment, $matches, PREG_OFFSET_CAPTURE);
         $source = '';
         $last = 0;
@@ -169,9 +187,12 @@ final class RouteRedaction
             $pattern = self::constraintOf($param);
             if ($pattern === null) {
                 $source .= '[^/]+';
-            } else {
+            } elseif (self::isUsableConstraint($pattern)) {
                 $constraints[] = ['group' => count($constraints) + 1, 'pattern' => $pattern];
                 $source .= '([^/]+)';
+            } else {
+                $usable = false;
+                $source .= '[^/]+';
             }
             $last = $offset + strlen($param);
         }
@@ -181,7 +202,11 @@ final class RouteRedaction
 
     private static function constraintOf(string $param): ?string
     {
-        return preg_match('#^\{\w+<([^>]*)>#', $param, $match) === 1 ? $match[1] : null;
+        if (!str_starts_with($param, '{') || preg_match('#<([^>]*)>#', $param, $match) !== 1) {
+            return null;
+        }
+
+        return $match[1];
     }
 
     private static function isUsableConstraint(string $body): bool
@@ -341,10 +366,11 @@ final class RouteRedaction
 
     private static function parseHyphen(string $body, int &$cursor, int $start): bool
     {
-        $isEdge = $cursor === $start || ($body[$cursor + 1] ?? '') === ']';
+        $next = $body[$cursor + 1] ?? '';
+        $isEdge = $cursor === $start || $next === ']';
         $cursor++;
 
-        return $isEdge;
+        return $next !== '-' && $isEdge;
     }
 
     private static function parseClassLiteral(string $body, int &$cursor): bool
@@ -353,10 +379,14 @@ final class RouteRedaction
         if (!self::takeLiteral($body, $cursor)) {
             return false;
         }
-        if (($body[$cursor] ?? '') !== '-' || !self::isLiteral($body[$cursor + 1] ?? ']')) {
+        $end = $body[$cursor + 1] ?? '';
+        if (($body[$cursor] ?? '') !== '-' || $end === '' || $end === ']') {
             return true;
         }
-        if (ord($first) > ord($body[$cursor + 1])) {
+        if ($end === '-' || !self::isLiteral($end) || ord($first) > ord($end)) {
+            return false;
+        }
+        if (ord($first) <= ord('/') && ord($end) >= ord('/')) {
             return false;
         }
         $cursor += 2;
@@ -400,11 +430,8 @@ final class RouteRedaction
             if ($value === '') {
                 continue;
             }
-            if (strlen($value) > self::MAX_SEGMENT_LENGTH) {
-                return null;
-            }
             $held = preg_match(
-                self::CONSTRAINT_DELIMITER . '^(?:' . $constraint['pattern'] . ')$' . self::CONSTRAINT_DELIMITER . 'Di',
+                self::CONSTRAINT_DELIMITER . '^(?:' . $constraint['pattern'] . ')$' . self::CONSTRAINT_DELIMITER . 'Dsi',
                 $value,
             );
             if ($held === false) {
@@ -418,6 +445,21 @@ final class RouteRedaction
         return true;
     }
 
+    /**
+     * @param list<array{group:int,pattern:string}> $constraints
+     * @param array<int|string, string> $captures
+     */
+    private static function overlong(array $constraints, array $captures): bool
+    {
+        foreach ($constraints as $constraint) {
+            if (strlen($captures[$constraint['group']] ?? '') > self::MAX_SEGMENT_LENGTH) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function redactedPath(string $pathname): ?string
     {
         if ($this->routes === []) {
@@ -429,23 +471,28 @@ final class RouteRedaction
         }
         $candidates = array_values(array_unique(array_map(self::normalize(...), $forms)));
         foreach ($this->routes as $route) {
+            $shapes = [];
             foreach ($candidates as $candidate) {
                 $matched = preg_match($route['regex'], $candidate, $captures);
                 if ($matched === false) {
                     return self::FAILED_OUTPUT;
                 }
-                if ($matched !== 1) {
-                    continue;
+                if ($matched === 1) {
+                    $shapes[] = $captures;
                 }
-                if (!$route['usable']) {
+            }
+            foreach ($shapes as $captures) {
+                if (self::overlong($route['constraints'], $captures)) {
                     return self::FAILED_OUTPUT;
                 }
+            }
+            foreach ($shapes as $captures) {
                 $held = self::constraintsHold($route['constraints'], $captures);
                 if ($held === null) {
                     return self::FAILED_OUTPUT;
                 }
                 if ($held) {
-                    return $route['output'];
+                    return $route['usable'] ? $route['output'] : self::FAILED_OUTPUT;
                 }
             }
         }

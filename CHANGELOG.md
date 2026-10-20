@@ -41,13 +41,16 @@
   are literals, `.`, `\d \D \w \W \s \S`, escaped ASCII punctuation (not
   `/`) or a class `[...]` without nesting, quantifiers `* + ? {n} {n,} {n,m}`
   with bounds up to 100, no lazy or possessive quantifiers, no two quantifiers
-  in a row, at most two variable quantifiers per constraint, at most 100
-  characters, and no empty branch. Groups, lookarounds, backreferences,
-  anchors and `/` are refused. A constraint outside the grammar makes the route
-  unusable: a path matching its shape is masked as `/[redacted]`, and other
-  paths are unaffected. A segment longer than 256 characters compared to a
-  constrained parameter is masked the same way. A `/` inside `<...>` does not
-  split the route into segments.
+  in a row, at most two variable quantifiers per constraint (`{n,n}` counts),
+  at most 100 characters, and no empty branch. Literals exclude `<` and `>`; a
+  class range cannot end on `-`, an escape or `<`/`>`, nor span `/`. Groups,
+  lookarounds, backreferences, anchors and `/` are refused. A constraint
+  outside the grammar makes the route unusable: a path matching its shape,
+  with that parameter read as any value, is masked as `/[redacted]`, and other
+  paths are unaffected. A stray `{` or `}` in a segment makes the route
+  unusable the same way. A value longer than 256 bytes for a constrained
+  parameter is masked before the constraint is checked. A `/` inside `<...>`
+  does not split the route into segments, and `.` never matches `/`.
 
 ## 0.6.1
 

@@ -286,6 +286,8 @@ final class RouteRedactionTest extends TestCase
         yield 'backslash escape of backslash' => ['/x/{p<\\\\>}', '/x/\\', '/x/{p}'];
         yield 'bounded repetition up to 100' => ['/x/{p<a{1,100}>}', '/x/'.str_repeat('a', 100), '/x/{p}'];
         yield 'constraint of 100 characters' => ['/x/{p<'.str_repeat('a', 100).'>}', '/x/'.str_repeat('a', 100), '/x/{p}'];
+        yield 'zero repetition' => ['/x/{p<a{0}b>}', '/x/b', '/x/{p}'];
+        yield 'two bounded equal quantifiers' => ['/x/{p<a{1,1}b{1,1}>}', '/x/ab', '/x/{p}'];
     }
 
     #[DataProvider('acceptedConstraints')]
@@ -329,6 +331,18 @@ final class RouteRedactionTest extends TestCase
         yield 'three variable quantifiers' => ['/x/{p<a*b*c*>}', '/x/abc'];
         yield 'quantifier without atom' => ['/x/{p<*a>}', '/x/a'];
         yield 'constraint of 101 characters with a class' => ['/x/{p<[a-z]'.str_repeat('a', 96).'>}', '/x/abc'];
+        yield 'three bounded equal quantifiers' => ['/x/{p<a{1,1}b{1,1}c{1,1}>}', '/x/abc'];
+        yield 'angle bracket literal' => ['/x/{p<a<b>}', '/x/a<b'];
+        yield 'angle bracket inside a class' => ['/x/{p<[<]>}', '/x/<'];
+        yield 'dash as the end of a class range' => ['/x/{p<[!--]>}', '/x/!'];
+        yield 'dash as the whole class range' => ['/x/{p<[--]>}', '/x/-'];
+        yield 'dash starting a range inside a class' => ['/x/{p<[--a]>}', '/x/a'];
+        yield 'class range ending with a class escape' => ['/x/{p<[a-\\d]>}', '/x/a'];
+        yield 'class range ending with a forbidden literal' => ['/x/{p<[!-<]>}', '/x/!'];
+        yield 'class range spanning a slash' => ['/x/{p<[!-~]>}', '/x/a'];
+        yield 'dash between two ranges' => ['/x/{p<[a-b-c]>}', '/x/-'];
+        yield 'stray brace after a bracket param' => ['/x/{id<[>]>}', '/x/anything'];
+        yield 'unclosed brace without constraint' => ['/x/{id', '/x/anything'];
     }
 
     #[DataProvider('rejectedConstraints')]
@@ -371,6 +385,45 @@ final class RouteRedactionTest extends TestCase
         $redaction = new RouteRedaction(['/blog/{page<\\d+>?}']);
         $this->assertSame('/blog/{page}', $redaction->path('/blog/7'));
         $this->assertSame('/blog/x', $redaction->path('/blog/x'));
+    }
+
+    public function test_dot_matches_a_line_feed_as_the_browser_does(): void
+    {
+        $this->assertSame('/x/{id}', (new RouteRedaction(['/x/{id<.>}']))->path('/x/%0A'));
+    }
+
+    public function test_negated_atoms_never_cross_a_slash(): void
+    {
+        $redaction = new RouteRedaction(['/x/{a<\\D+>}/end', '/y/{b<[^a]+>}/end', '/z/{c<\\W+>}/end']);
+        $this->assertSame('/x/a/b/end', $redaction->path('/x/a/b/end'));
+        $this->assertSame('/y/a/b/end', $redaction->path('/y/a/b/end'));
+        $this->assertSame('/z/a/b/end', $redaction->path('/z/a/b/end'));
+    }
+
+    public function test_stray_brace_masks_the_matching_path(): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/x/{a<b/c}']))->path('/x/zzz'));
+    }
+
+    public function test_unusable_route_masks_only_when_the_usable_constraint_holds(): void
+    {
+        $redaction = new RouteRedaction(['/x/{a<[>}/{b<\\d+>}']);
+        $this->assertSame('/x/zz/abc', $redaction->path('/x/zz/abc'));
+        $this->assertSame('/[redacted]', $redaction->path('/x/zz/12'));
+    }
+
+    public function test_overlong_segment_masks_even_when_the_constraint_breaks(): void
+    {
+        $redaction = new RouteRedaction(['/x/{p<\\d+>}']);
+        $this->assertSame('/[redacted]', $redaction->path('/x/'.str_repeat('a', 257)));
+        $this->assertSame('/x/'.str_repeat('a', 256), $redaction->path('/x/'.str_repeat('a', 256)));
+    }
+
+    public function test_optional_brace_constraint_is_enforced(): void
+    {
+        $redaction = new RouteRedaction(['/x/{id?<\\d>}']);
+        $this->assertSame('/x/{id}', $redaction->path('/x/7'));
+        $this->assertSame('/x/abc', $redaction->path('/x/abc'));
     }
 
     private static function encoded(string $path, int $times): string
