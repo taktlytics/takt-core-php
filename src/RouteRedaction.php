@@ -137,7 +137,11 @@ final class RouteRedaction
 
     private function redactedPath(string $pathname): ?string
     {
-        $candidates = self::candidates($pathname);
+        $candidates = array_values(array_unique([
+            self::collapseSlashes($pathname),
+            self::collapseSlashes(self::decodeUri($pathname)),
+            self::collapseSlashes(rawurldecode($pathname)),
+        ]));
         foreach ($this->routes as $route) {
             foreach ($candidates as $candidate) {
                 $matched = preg_match($route['regex'], $candidate);
@@ -151,16 +155,6 @@ final class RouteRedaction
         }
 
         return null;
-    }
-
-    /** @return list<string> */
-    private static function candidates(string $pathname): array
-    {
-        return array_values(array_unique([
-            self::collapseSlashes($pathname),
-            self::collapseSlashes(self::decodeUri($pathname)),
-            self::collapseSlashes(rawurldecode($pathname)),
-        ]));
     }
 
     private static function collapseSlashes(string $path): string
