@@ -722,6 +722,23 @@ final class RouteRedactionTest extends TestCase
         yield 'fullwidth question mark in the host' => ['https://ex？verify？TOKEN'];
         yield 'fullwidth colon in the host' => ['https://ex：verify/TOKEN'];
         yield 'no-break space in the host' => ["https://ex\xC2\xA0.com/verify/abc"];
+        yield 'semicolon in the host' => ['https://ex.com;TOKEN/verify/abc'];
+        yield 'exclamation mark in the host' => ['https://ex!TOKEN.com/verify/abc'];
+    }
+
+    /** @return iterable<string,array{string,string}> */
+    public static function legitimateHosts(): iterable
+    {
+        yield 'IPv6 with a port' => ['https://[::1]:8080/verify/abc', 'https://[::1]:8080/verify/[token]'];
+        yield 'IPv4' => ['https://192.0.2.1/verify/abc', 'https://192.0.2.1/verify/[token]'];
+        yield 'underscore' => ['https://my_host.example/verify/abc', 'https://my_host.example/verify/[token]'];
+        yield 'punycode' => ['https://xn--exemple-cva.test/verify/abc', 'https://xn--exemple-cva.test/verify/[token]'];
+    }
+
+    #[DataProvider('legitimateHosts')]
+    public function test_legitimate_host_is_masked_in_routes_mode(string $url, string $expected): void
+    {
+        $this->assertSame($expected, (new RouteRedaction(['/verify/[token]']))->page($url));
     }
 
     public function test_routes_mode_masks_a_punycode_host(): void
