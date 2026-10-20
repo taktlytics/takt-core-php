@@ -4,16 +4,16 @@
 
 ### Patch Changes
 
-- Fix the browser tracker losing `window.takt` after the first pageview. The
-  vendored `takt.auto.js` began with `var takt=(function(exports){...})({})`:
-  loaded as a classic script, it replaced the global `takt` (and its
-  `takt_mask`) with `{ runAuto }`. From the second event on, the URL was empty
-  (`u: ""`), which the ingest rejects with a 400, and `takt('Event')` threw. The
-  bug hit SPA navigations, outbound clicks, file downloads, 404 pageviews and
+- Fix the browser tracker losing `window.takt` once loaded. Every vendored
+  `takt.auto.js` began with `var takt=(function(exports){...})({})`: loaded as a
+  classic script, it replaced the global `takt` with `{ runAuto }`, so
+  `takt('Event')` threw. Since 0.6.1 (bundle from takt-core 0.11.1), the URL
+  redaction is read from that global too, so every event after the first
+  pageview was sent with an empty URL (`u: ""`), which the ingest rejects with a
+  400. This hit SPA navigations, outbound clicks, file downloads, 404 events and
   tagged elements, in inline, asset and CDN modes, and in the Laravel, Symfony
-  and WordPress integrations that embed this bundle. Every bundle this package
-  has vendored had this shape, from the first vendored bundle onward. Upgrade to
-  0.7.3 to load the fixed bundle; no code change is needed on your side.
+  and WordPress integrations that embed this bundle. Upgrade to 0.7.3 to load
+  the fixed bundle; no code change is needed on your side.
 - Bump the CDN/ESM tracker pins and the vendored `takt.auto.js` to
   `@vskstudio/takt-core@0.12.3`, which builds the auto bundle without a global
   variable. `bin/sync-bundle.sh` now defaults to 0.12.3.
