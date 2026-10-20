@@ -59,6 +59,7 @@ Autocapture is opt-in and bundled into the vendored `takt.auto.js`. Each toggle 
 
 - `outbound: true`: outbound link clicks (`outbound`)
 - `files: true`: download clicks (`downloads`); narrow the matched extensions with `fileExtensions: ['pdf', 'zip']`, emitted as `data-downloads-ext`
+  Without `fileExtensions`, the tracker matches its default list: `pdf`, `zip`, `dmg`, `xlsx`, `csv`, `doc`, `docx`, `ppt`, `pptx`, `rar`, `7z`, `gz`, `mp3`, `mp4`, `wav`, `avi`, `mov`, `exe`, `apk`, `mkv`, `txt` (21 extensions).
 - `tagged: true`: elements tagged in HTML with `data-takt-event` (`tagged`)
 - `notFound: true`: 404 pageviews (`404`)
 

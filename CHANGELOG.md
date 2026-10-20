@@ -1,5 +1,14 @@
 # vskstudio/takt-core-php
 
+## 0.7.2
+
+### Patch Changes
+
+- Bump the CDN/ESM tracker pins and the vendored `takt.auto.js` to
+  `@vskstudio/takt-core@0.12.2`. Its default download extensions now include
+  `doc` and `ppt`: the tracker matches 21 extensions when `fileExtensions` is
+  not set, instead of 19. `bin/sync-bundle.sh` now defaults to 0.12.2.
+
 ## 0.7.1
 
 ### Patch Changes
