@@ -11,6 +11,7 @@ final class RouteRedaction
     private const BRACE = '#\{(\w+)(<[^>]*>)?(\?[^}]*)?\}#';
     private const RESERVED_ESCAPES = ['23', '24', '26', '2B', '2C', '2F', '3A', '3B', '3D', '3F', '40'];
     private const FAILED_OUTPUT = '/[redacted]';
+    private const MAX_DECODE_PASSES = 5;
 
     /** @var list<array{regex:string,output:string}> */
     private readonly array $routes;
@@ -137,12 +138,14 @@ final class RouteRedaction
 
     private function redactedPath(string $pathname): ?string
     {
-        $candidates = array_values(array_unique([
-            self::normalize($pathname),
-            self::normalize(self::decodeUri($pathname)),
-            self::normalize(rawurldecode($pathname)),
-            self::normalize(rawurldecode(rawurldecode($pathname))),
-        ]));
+        if ($this->routes === []) {
+            return null;
+        }
+        $forms = self::forms($pathname);
+        if ($forms === null) {
+            return self::FAILED_OUTPUT;
+        }
+        $candidates = array_values(array_unique(array_map(self::normalize(...), $forms)));
         foreach ($this->routes as $route) {
             foreach ($candidates as $candidate) {
                 $matched = preg_match($route['regex'], $candidate);
@@ -156,6 +159,27 @@ final class RouteRedaction
         }
 
         return null;
+    }
+
+    /** @return list<string>|null */
+    private static function forms(string $pathname): ?array
+    {
+        $forms = [$pathname, self::decodeUri($pathname)];
+        $current = $pathname;
+        for ($pass = 0; rawurldecode($current) !== $current; $pass++) {
+            if ($pass === self::MAX_DECODE_PASSES) {
+                return null;
+            }
+            $current = rawurldecode($current);
+            $forms[] = $current;
+        }
+
+        return array_merge($forms, array_map(self::stripMatrixParameters(...), $forms));
+    }
+
+    private static function stripMatrixParameters(string $path): string
+    {
+        return implode('/', array_map(static fn (string $segment): string => explode(';', $segment, 2)[0], explode('/', $path)));
     }
 
     private static function normalize(string $path): string

@@ -139,6 +139,54 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/files/[name]', (new RouteRedaction(['/files/[name]']))->path('/files%252Fsecret'));
     }
 
+    public function test_triple_encoded_separator_is_matched(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/orders%25252F123'));
+    }
+
+    public function test_quadruple_encoded_path_is_matched(): void
+    {
+        $path = '/orders'.self::encoded('/123', 4);
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path($path));
+    }
+
+    public function test_path_still_encoded_after_the_decoding_bound_is_masked(): void
+    {
+        $path = '/orders'.self::encoded('/123', 6);
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/orders/[id]']))->path($path));
+    }
+
+    public function test_triple_encoded_dot_segments_are_removed(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/%25252e%25252e/orders/123'));
+    }
+
+    public function test_matrix_parameters_are_ignored_before_matching(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/orders;a=1/123'));
+        $this->assertSame('/admin/[x]', (new RouteRedaction(['/admin/[x]']))->path('/admin;x/secret'));
+    }
+
+    public function test_raw_path_is_matched_for_patterns_with_literal_escapes(): void
+    {
+        $this->assertSame('/a%20b/[x]', (new RouteRedaction(['/a%20b/[x]']))->path('/a%20b/1'));
+    }
+
+    public function test_templated_page_drops_query_and_hash(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/{slug?}');
+        $this->assertSame('https://example.com/blog/{slug}', $redaction->page('https://example.com/blog/hello?x=1#f'));
+    }
+
+    private static function encoded(string $path, int $times): string
+    {
+        for ($i = 0; $i < $times; $i++) {
+            $path = rawurlencode($path);
+        }
+
+        return $path;
+    }
+
     public function test_dot_segments_are_removed_before_matching(): void
     {
         $redaction = new RouteRedaction(['/admin/[x]']);
