@@ -646,6 +646,21 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('https://example.com/', $redaction->referrer('https://example.com/blog/a?x=1', 'https://example.com/blog/b'));
     }
 
+    public function test_templated_mode_reduces_cross_host_referrer_to_origin(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/[slug]');
+        $this->assertSame(
+            'https://other.example/',
+            $redaction->referrer('https://other.example/verify/abc?x=1', 'https://example.com/blog/b'),
+        );
+    }
+
+    public function test_templated_mode_drops_non_http_referrer(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/[slug]');
+        $this->assertSame('', $redaction->referrer('android-app://com.example/verify/abc', 'https://example.com/blog/b'));
+    }
+
     public function test_browser_pattern_translates_brace_syntax(): void
     {
         $this->assertSame('/verify/[token]', RouteRedaction::browserPattern('/verify/{token}'));

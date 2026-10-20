@@ -92,15 +92,24 @@ final class RouteRedaction
 
     public function referrer(string $url, string $pageUrl): string
     {
+        if ($this->template !== null) {
+            $origin = self::httpOrigin($url);
+
+            return $origin === null ? '' : $origin . '/';
+        }
         $origin = self::origin($url);
         if ($origin === null || $origin !== self::origin($pageUrl)) {
             return $url;
         }
-        if ($this->template !== null) {
-            return $origin . '/';
-        }
 
         return $this->routes !== [] ? $this->rewrite($url, null) : $url;
+    }
+
+    private static function httpOrigin(string $url): ?string
+    {
+        $origin = self::origin($url);
+
+        return $origin !== null && preg_match('#^https?://#', $origin) === 1 ? $origin : null;
     }
 
     /** @return list<string> */
