@@ -13,8 +13,15 @@ final class RouteRedaction
     private const FAILED_OUTPUT = '/[redacted]';
     private const MAX_DECODE_PASSES = 5;
     private const CONSTRAINT_DELIMITER = "\x01";
+    private const MAX_CONSTRAINT_LENGTH = 100;
+    private const MAX_REPEAT = 100;
+    private const MAX_VARIABLE_QUANTIFIERS = 2;
+    private const MAX_SEGMENT_LENGTH = 256;
+    private const SPECIAL_CHARACTERS = '()[]{}|*+?.\\^$/';
+    private const CLASS_ESCAPES = 'dDwWsS';
+    private const ASCII_PUNCTUATION = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
 
-    /** @var list<array{output:string,regex:?string,constraints:list<array{group:int,pattern:string}>}> */
+    /** @var list<array{output:string,regex:string,constraints:list<array{group:int,pattern:string}>,usable:bool}> */
     private readonly array $routes;
 
     private readonly ?string $template;
@@ -101,9 +108,10 @@ final class RouteRedaction
     /** @return list<string> */
     private static function segments(string $template): array
     {
+        preg_match_all('#(?:<[^>]*>|[^/])+#', $template, $matches);
         $segments = [];
-        foreach (explode('/', $template) as $segment) {
-            if ($segment !== '' && preg_match(self::GROUP, $segment) !== 1) {
+        foreach ($matches[0] as $segment) {
+            if (preg_match(self::GROUP, $segment) !== 1) {
                 $segments[] = $segment;
             }
         }
@@ -121,7 +129,7 @@ final class RouteRedaction
         return preg_replace(self::BRACE, '{$1}', $segment) ?? $segment;
     }
 
-    /** @return array{output:string,regex:?string,constraints:list<array{group:int,pattern:string}>} */
+    /** @return array{output:string,regex:string,constraints:list<array{group:int,pattern:string}>,usable:bool} */
     private static function route(string $pattern): array
     {
         $source = '';
@@ -137,15 +145,16 @@ final class RouteRedaction
                 $source .= '/' . self::segmentSource($segment, $constraints);
             }
         }
-        $valid = true;
+        $usable = true;
         foreach ($constraints as $constraint) {
-            $valid = $valid && self::isValidConstraint($constraint['pattern']);
+            $usable = $usable && self::isUsableConstraint($constraint['pattern']);
         }
 
         return [
             'output' => self::canonical($pattern),
-            'regex' => $valid ? '#^' . $source . '/?$#Di' : null,
+            'regex' => '#^' . $source . '/?$#Di',
             'constraints' => $constraints,
+            'usable' => $usable,
         ];
     }
 
@@ -175,17 +184,209 @@ final class RouteRedaction
         return preg_match('#^\{\w+<([^>]*)>#', $param, $match) === 1 ? $match[1] : null;
     }
 
-    private static function isValidConstraint(string $pattern): bool
+    private static function isUsableConstraint(string $body): bool
     {
-        if (str_contains($pattern, self::CONSTRAINT_DELIMITER)) {
+        if ($body === '' || strlen($body) > self::MAX_CONSTRAINT_LENGTH) {
             return false;
         }
-        set_error_handler(static fn (): bool => true);
-        try {
-            return preg_match(self::CONSTRAINT_DELIMITER . $pattern . self::CONSTRAINT_DELIMITER, '') !== false;
-        } finally {
-            restore_error_handler();
+        $cursor = 0;
+        $variable = 0;
+
+        return self::parseAlternation($body, $cursor, $variable);
+    }
+
+    private static function parseAlternation(string $body, int &$cursor, int &$variable): bool
+    {
+        if (!self::parseBranch($body, $cursor, $variable)) {
+            return false;
         }
+        while (self::consume($body, $cursor, '|')) {
+            if (!self::parseBranch($body, $cursor, $variable)) {
+                return false;
+            }
+        }
+
+        return $cursor === strlen($body);
+    }
+
+    private static function parseBranch(string $body, int &$cursor, int &$variable): bool
+    {
+        $pieces = 0;
+        while ($cursor < strlen($body) && $body[$cursor] !== '|') {
+            if (!self::parseAtom($body, $cursor) || !self::parseQuantifier($body, $cursor, $variable)) {
+                return false;
+            }
+            $pieces++;
+        }
+
+        return $pieces > 0;
+    }
+
+    private static function parseAtom(string $body, int &$cursor): bool
+    {
+        $char = $body[$cursor];
+        if ($char === '.') {
+            $cursor++;
+
+            return true;
+        }
+        if ($char === '[') {
+            return self::parseClass($body, $cursor);
+        }
+        if ($char === '\\') {
+            return self::parseEscape($body, $cursor);
+        }
+
+        return self::takeLiteral($body, $cursor);
+    }
+
+    private static function parseQuantifier(string $body, int &$cursor, int &$variable): bool
+    {
+        if (
+            self::consume($body, $cursor, '*')
+            || self::consume($body, $cursor, '+')
+            || self::consume($body, $cursor, '?')
+        ) {
+            return self::countVariable($variable);
+        }
+        if (self::consume($body, $cursor, '{')) {
+            return self::parseBraces($body, $cursor, $variable);
+        }
+
+        return true;
+    }
+
+    private static function parseBraces(string $body, int &$cursor, int &$variable): bool
+    {
+        $minimum = self::readNumber($body, $cursor);
+        if ($minimum === null) {
+            return false;
+        }
+        if (self::consume($body, $cursor, '}')) {
+            return true;
+        }
+        if (!self::consume($body, $cursor, ',') || !self::countVariable($variable)) {
+            return false;
+        }
+        if (self::consume($body, $cursor, '}')) {
+            return true;
+        }
+        $maximum = self::readNumber($body, $cursor);
+
+        return $maximum !== null && $minimum <= $maximum && self::consume($body, $cursor, '}');
+    }
+
+    private static function readNumber(string $body, int &$cursor): ?int
+    {
+        $number = null;
+        while ($cursor < strlen($body) && ctype_digit($body[$cursor])) {
+            $number = ($number ?? 0) * 10 + (int) $body[$cursor];
+            if ($number > self::MAX_REPEAT) {
+                return null;
+            }
+            $cursor++;
+        }
+
+        return $number;
+    }
+
+    private static function countVariable(int &$variable): bool
+    {
+        $variable++;
+
+        return $variable <= self::MAX_VARIABLE_QUANTIFIERS;
+    }
+
+    private static function parseEscape(string $body, int &$cursor): bool
+    {
+        if ($cursor + 1 >= strlen($body)) {
+            return false;
+        }
+        $escaped = $body[$cursor + 1];
+        $isClassEscape = str_contains(self::CLASS_ESCAPES, $escaped);
+        $isPunctuation = $escaped !== '/' && str_contains(self::ASCII_PUNCTUATION, $escaped);
+        if (!$isClassEscape && !$isPunctuation) {
+            return false;
+        }
+        $cursor += 2;
+
+        return true;
+    }
+
+    private static function parseClass(string $body, int &$cursor): bool
+    {
+        $cursor++;
+        self::consume($body, $cursor, '^');
+        $start = $cursor;
+        while ($cursor < strlen($body) && $body[$cursor] !== ']') {
+            if (!self::parseClassItem($body, $cursor, $start)) {
+                return false;
+            }
+        }
+
+        return $cursor !== $start && self::consume($body, $cursor, ']');
+    }
+
+    private static function parseClassItem(string $body, int &$cursor, int $start): bool
+    {
+        if ($body[$cursor] === '\\') {
+            return self::parseEscape($body, $cursor);
+        }
+        if ($body[$cursor] === '-') {
+            return self::parseHyphen($body, $cursor, $start);
+        }
+
+        return self::parseClassLiteral($body, $cursor);
+    }
+
+    private static function parseHyphen(string $body, int &$cursor, int $start): bool
+    {
+        $isEdge = $cursor === $start || ($body[$cursor + 1] ?? '') === ']';
+        $cursor++;
+
+        return $isEdge;
+    }
+
+    private static function parseClassLiteral(string $body, int &$cursor): bool
+    {
+        $first = $body[$cursor];
+        if (!self::takeLiteral($body, $cursor)) {
+            return false;
+        }
+        if (($body[$cursor] ?? '') !== '-' || !self::isLiteral($body[$cursor + 1] ?? ']')) {
+            return true;
+        }
+        if (ord($first) > ord($body[$cursor + 1])) {
+            return false;
+        }
+        $cursor += 2;
+
+        return true;
+    }
+
+    private static function takeLiteral(string $body, int &$cursor): bool
+    {
+        if (!self::isLiteral($body[$cursor])) {
+            return false;
+        }
+        $cursor++;
+
+        return true;
+    }
+
+    private static function isLiteral(string $char): bool
+    {
+        return ord($char) >= 0x20 && ord($char) <= 0x7E && !str_contains(self::SPECIAL_CHARACTERS, $char);
+    }
+
+    private static function consume(string $body, int &$cursor, string $expected): bool
+    {
+        if (($body[$cursor] ?? '') !== $expected) {
+            return false;
+        }
+        $cursor++;
+
+        return true;
     }
 
     /**
@@ -198,6 +399,9 @@ final class RouteRedaction
             $value = $captures[$constraint['group']] ?? '';
             if ($value === '') {
                 continue;
+            }
+            if (strlen($value) > self::MAX_SEGMENT_LENGTH) {
+                return null;
             }
             $held = preg_match(
                 self::CONSTRAINT_DELIMITER . '^(?:' . $constraint['pattern'] . ')$' . self::CONSTRAINT_DELIMITER . 'Di',
@@ -225,9 +429,6 @@ final class RouteRedaction
         }
         $candidates = array_values(array_unique(array_map(self::normalize(...), $forms)));
         foreach ($this->routes as $route) {
-            if ($route['regex'] === null) {
-                return self::FAILED_OUTPUT;
-            }
             foreach ($candidates as $candidate) {
                 $matched = preg_match($route['regex'], $candidate, $captures);
                 if ($matched === false) {
@@ -235,6 +436,9 @@ final class RouteRedaction
                 }
                 if ($matched !== 1) {
                     continue;
+                }
+                if (!$route['usable']) {
+                    return self::FAILED_OUTPUT;
                 }
                 $held = self::constraintsHold($route['constraints'], $captures);
                 if ($held === null) {

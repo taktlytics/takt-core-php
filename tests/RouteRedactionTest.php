@@ -263,6 +263,109 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/[redacted]', (new RouteRedaction(['/x/{p<(a+)+>}']))->path($path));
     }
 
+    /** @return iterable<string,array{string,string,string}> */
+    public static function acceptedConstraints(): iterable
+    {
+        yield 'digits' => ['/x/{p<\\d+>}', '/x/12', '/x/{p}'];
+        yield 'class with ranges and dash' => ['/x/{p<[a-z0-9-]+>}', '/x/ab-1', '/x/{p}'];
+        yield 'uuid' => [
+            '/x/{p<[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}>}',
+            '/x/123e4567-e89b-12d3-a456-426614174000',
+            '/x/{p}',
+        ];
+        yield 'top-level alternation matches' => ['/x/{p<fr|en>}', '/x/fr', '/x/{p}'];
+        yield 'top-level alternation breaks raw' => ['/x/{p<fr|en>}', '/x/de', '/x/de'];
+        yield 'case insensitive class' => ['/x/{p<[a-f]+>}', '/x/ABC', '/x/{p}'];
+        yield 'alternation of words' => ['/x/{id<a|b>}', '/x/ab', '/x/ab'];
+        yield 'alternation of one word' => ['/x/{id<a|b>}', '/x/b', '/x/{id}'];
+        yield 'param next to a literal' => ['/p/{a<\\d+>}-{b}', '/p/12-x', '/p/{a}-{b}'];
+        yield 'exact repetition is not counted' => ['/x/{p<\\d{4}-\\d{2}>}', '/x/2026-10', '/x/{p}'];
+        yield 'two variable quantifiers' => ['/x/{p<a?b?c>}', '/x/abc', '/x/{p}'];
+        yield 'dot atom' => ['/x/{p<.>}', '/x/z', '/x/{p}'];
+        yield 'escaped punctuation' => ['/x/{p<a\\.b>}', '/x/a.b', '/x/{p}'];
+        yield 'backslash escape of backslash' => ['/x/{p<\\\\>}', '/x/\\', '/x/{p}'];
+        yield 'bounded repetition up to 100' => ['/x/{p<a{1,100}>}', '/x/'.str_repeat('a', 100), '/x/{p}'];
+        yield 'constraint of 100 characters' => ['/x/{p<'.str_repeat('a', 100).'>}', '/x/'.str_repeat('a', 100), '/x/{p}'];
+    }
+
+    #[DataProvider('acceptedConstraints')]
+    public function test_grammar_accepted_constraint_is_enforced(string $route, string $path, string $expected): void
+    {
+        $this->assertSame($expected, (new RouteRedaction([$route]))->path($path));
+    }
+
+    /** @return iterable<string,array{string,string}> */
+    public static function rejectedConstraints(): iterable
+    {
+        yield 'empty constraint' => ['/x/{p<>}', '/x/abc'];
+        yield 'empty branch after alternation' => ['/x/{p<fr|>}', '/x/fr'];
+        yield 'empty branch before alternation' => ['/x/{p<|fr>}', '/x/fr'];
+        yield 'constraint of 101 characters' => ['/x/{p<'.str_repeat('a', 101).'>}', '/x/'.str_repeat('a', 101)];
+        yield 'non ascii literal' => ['/x/{p<é>}', '/x/é'];
+        yield 'capturing group' => ['/x/{p<(a)>}', '/x/a'];
+        yield 'nested quantifier group' => ['/x/{p<(a|a)*>}', '/x/aa'];
+        yield 'nested plus group' => ['/x/{p<((a)+)+>}', '/x/aaa'];
+        yield 'negative lookahead' => ['/x/{p<(?!x)a>}', '/x/a'];
+        yield 'positive lookbehind' => ['/x/{p<(?<=a)b>}', '/x/b'];
+        yield 'backreference' => ['/x/{p<(a)\\1>}', '/x/aa'];
+        yield 'digit escape' => ['/x/{p<\\1>}', '/x/1'];
+        yield 'letter escape outside the list' => ['/x/{p<\\b>}', '/x/abc'];
+        yield 'slash literal' => ['/x/{p<a/b>}', '/x/abc'];
+        yield 'start anchor' => ['/x/{p<^\\d+>}', '/x/12'];
+        yield 'end anchor' => ['/x/{p<\\d+$>}', '/x/12'];
+        yield 'unclosed class' => ['/x/{p<[>}', '/x/abc'];
+        yield 'empty class' => ['/x/{p<[]>}', '/x/abc'];
+        yield 'reversed range' => ['/x/{p<[z-a]>}', '/x/m'];
+        yield 'hyphen after class escape' => ['/x/{p<[\\d-z]>}', '/x/1'];
+        yield 'nested class' => ['/x/{p<[a[b]>}', '/x/a'];
+        yield 'empty class followed by a class' => ['/x/{p<[][a]>}', '/x/a'];
+        yield 'octal escape' => ['/x/{p<\\0>}', '/x/%00'];
+        yield 'repetition above 100' => ['/x/{p<a{101}>}', '/x/'.str_repeat('a', 101)];
+        yield 'reversed bounds' => ['/x/{p<a{3,2}>}', '/x/aaa'];
+        yield 'missing bound' => ['/x/{p<a{,3}>}', '/x/aa'];
+        yield 'lazy quantifier' => ['/x/{p<a*?>}', '/x/aaa'];
+        yield 'possessive quantifier' => ['/x/{p<a*+>}', '/x/aaa'];
+        yield 'two quantifiers in a row' => ['/x/{p<a**>}', '/x/aaa'];
+        yield 'three variable quantifiers' => ['/x/{p<a*b*c*>}', '/x/abc'];
+        yield 'quantifier without atom' => ['/x/{p<*a>}', '/x/a'];
+        yield 'constraint of 101 characters with a class' => ['/x/{p<[a-z]'.str_repeat('a', 96).'>}', '/x/abc'];
+    }
+
+    #[DataProvider('rejectedConstraints')]
+    public function test_grammar_rejected_constraint_masks_a_matching_path(string $route, string $path): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction([$route]))->path($path));
+    }
+
+    public function test_rejected_constraint_leaves_other_shapes_raw(): void
+    {
+        $this->assertSame('/y/a', (new RouteRedaction(['/x/{p<(a)>}']))->path('/y/a'));
+    }
+
+    public function test_rejected_constraint_does_not_split_on_a_slash_inside_brackets(): void
+    {
+        $this->assertSame('/x/a/b', (new RouteRedaction(['/x/{p<a/b>}']))->path('/x/a/b'));
+    }
+
+    public function test_segment_longer_than_256_characters_masks_the_path(): void
+    {
+        $redaction = new RouteRedaction(['/x/{p<\\w+>}']);
+        $this->assertSame('/x/{p}', $redaction->path('/x/'.str_repeat('a', 256)));
+        $this->assertSame('/[redacted]', $redaction->path('/x/'.str_repeat('a', 257)));
+    }
+
+    public function test_grammar_worst_case_match_is_bounded(): void
+    {
+        $redaction = new RouteRedaction(['/x/{p<\\w*\\w*!>}', '/x/{q<a*a+!>}']);
+        $started = hrtime(true);
+        $raw = $redaction->path('/x/'.str_repeat('a', 128).'!'.str_repeat('a', 127));
+        $matched = $redaction->path('/x/'.str_repeat('a', 255).'!');
+        $elapsed = (hrtime(true) - $started) / 1e6;
+        $this->assertSame('/x/'.str_repeat('a', 128).'!'.str_repeat('a', 127), $raw);
+        $this->assertSame('/x/{p}', $matched);
+        $this->assertLessThan(50.0, $elapsed);
+    }
+
     public function test_optional_constrained_segment_is_checked(): void
     {
         $redaction = new RouteRedaction(['/blog/{page<\\d+>?}']);

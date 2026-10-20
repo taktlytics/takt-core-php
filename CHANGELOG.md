@@ -36,8 +36,18 @@
   seven spellings (the raw path, the `decodeUri` form, and up to five
   `rawurldecode` passes), each also tried with its matrix parameters ignored.
 - A constraint `{name<regex>}` is anchored on the whole segment, cannot match
-  across a `/`, and is matched case-insensitively. An invalid constraint, or one
-  that exhausts PCRE's backtrack limit, masks the path as `/[redacted]`.
+  across a `/`, and is matched case-insensitively. The constraint must follow a
+  restricted grammar, not PCRE: alternation only at the top level, atoms that
+  are literals, `.`, `\d \D \w \W \s \S`, escaped ASCII punctuation (not
+  `/`) or a class `[...]` without nesting, quantifiers `* + ? {n} {n,} {n,m}`
+  with bounds up to 100, no lazy or possessive quantifiers, no two quantifiers
+  in a row, at most two variable quantifiers per constraint, at most 100
+  characters, and no empty branch. Groups, lookarounds, backreferences,
+  anchors and `/` are refused. A constraint outside the grammar makes the route
+  unusable: a path matching its shape is masked as `/[redacted]`, and other
+  paths are unaffected. A segment longer than 256 characters compared to a
+  constrained parameter is masked the same way. A `/` inside `<...>` does not
+  split the route into segments.
 
 ## 0.6.1
 
