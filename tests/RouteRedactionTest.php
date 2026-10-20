@@ -602,10 +602,16 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('https://localhost:8000/verify/[token]', $redaction->page('https://localhost:8000/verify/abc'));
     }
 
-    public function test_page_leaves_an_unparsable_url_untouched(): void
+    public function test_page_empties_an_unparsable_url_when_masking_is_configured(): void
     {
         $redaction = new RouteRedaction(['/verify/[token]']);
-        $this->assertSame('/verify/abc', $redaction->page('/verify/abc'));
+        $this->assertSame('', $redaction->page('/verify/abc'));
+        $this->assertSame('', $redaction->page('https://example.com:abc/verify/abc'));
+    }
+
+    public function test_page_leaves_an_unparsable_url_untouched_without_masking(): void
+    {
+        $this->assertSame('/verify/abc', (new RouteRedaction())->page('/verify/abc'));
     }
 
     public function test_template_replaces_every_page_path(): void

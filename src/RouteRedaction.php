@@ -96,7 +96,7 @@ final class RouteRedaction
         }
         $parts = self::parse($url);
         if ($parts === null) {
-            return $this->templated ? '' : $url;
+            return '';
         }
         $path = $this->templated ? $this->templatedPath($parts['path']) : $this->redactedPath($parts['path']);
 

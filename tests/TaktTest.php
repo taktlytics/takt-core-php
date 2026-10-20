@@ -497,6 +497,26 @@ final class TaktTest extends TestCase
         $this->assertSame('https://example.com/users/42?x=1', self::lastBody($mock)['u']);
     }
 
+    public function test_unparsable_page_url_in_redact_routes_mode_is_sent_empty_never_raw(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeRedactingClient($mock, ['/users/[id]'])->pageview('/users/42');
+
+        $body = self::lastBody($mock);
+        $this->assertSame('', $body['u']);
+        $this->assertStringNotContainsString('/users/42', (string) json_encode($body));
+    }
+
+    public function test_unparsable_page_url_without_masking_option_is_sent_unchanged(): void
+    {
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $this->makeClient($mock)->pageview('/cart/42');
+
+        $this->assertSame('/cart/42', self::lastBody($mock)['u']);
+    }
+
     public function test_unparsable_page_url_in_template_mode_is_sent_empty_never_raw(): void
     {
         $mock = new Client();
