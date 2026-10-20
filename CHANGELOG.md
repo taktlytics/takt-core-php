@@ -32,6 +32,11 @@
   or `：`, a no-break space) are read as delimiters by a browser, so the page goes
   out with an empty `u` and the referrer is dropped. Punycode hosts (`xn--...`)
   are unaffected.
+- When a masking option is configured, a host is restricted to letters, digits,
+  `.`, `-` and `_`, or to an IPv6 literal in brackets. A sub-delimiter such as
+  `;` or `!` in the host used to leave the path inside the origin, so such a URL
+  is now unparsable: the page goes out with an empty `u` and the referrer is
+  dropped.
 
 ## 0.7.0
 
