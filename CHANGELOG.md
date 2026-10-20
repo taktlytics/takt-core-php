@@ -17,7 +17,8 @@
   URL goes out as its origin and `/[redacted]`, without query or hash. A blank
   `route` counts as absent and falls back to the default resolver. A page URL
   that cannot be parsed goes out with an empty `u` (refused by the ingest)
-  instead of the raw URL. Outside template mode nothing changes.
+  instead of the raw URL. The same holds with `redactRoutes` alone, without a
+  template. With no masking option configured, nothing changes.
 
 ## 0.7.0
 
