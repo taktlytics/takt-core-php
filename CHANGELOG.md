@@ -8,6 +8,9 @@
   reduced to its origin, whatever its host: a cross-host referrer used to go out
   whole, path included. A referrer that is not `http(s)` is now dropped (`r` is
   empty) instead of being kept.
+- Bump the CDN/ESM tracker pins to `@vskstudio/takt-core@0.12.1`, which carries
+  the same referrer rules for the browser SDK. `bin/sync-bundle.sh` now defaults
+  to 0.12.1.
 
 ## 0.7.0
 
