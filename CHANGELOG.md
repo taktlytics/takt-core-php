@@ -1,5 +1,14 @@
 # vskstudio/takt-core-php
 
+## 0.7.1
+
+### Patch Changes
+
+- In template mode (`routeTemplate` / `routeTemplates`), the referrer is always
+  reduced to its origin, whatever its host: a cross-host referrer used to go out
+  whole, path included. A referrer that is not `http(s)` is now dropped (`r` is
+  empty) instead of being kept.
+
 ## 0.7.0
 
 ### Breaking Changes
