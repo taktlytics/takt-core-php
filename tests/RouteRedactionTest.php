@@ -549,6 +549,17 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/a/*/b', (new RouteRedaction(['/a/**/b']))->path('/a/1/2/b'));
     }
 
+    public function test_control_byte_is_not_a_word_character_in_a_constrained_segment(): void
+    {
+        $this->assertSame("/x/a\x01b", (new RouteRedaction(['/x/{p<\w+>}']))->path("/x/a\x01b"));
+        $this->assertSame('/x/{p}', (new RouteRedaction(['/x/{p<.>}']))->path("/x/\x01"));
+    }
+
+    public function test_unusable_route_with_two_rest_segments_keeps_the_collapsed_shape(): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/a/**/b/**/c']))->path('/a/zz/c'));
+    }
+
     public function test_optional_parameter_counts_one_more_variable_in_the_degree(): void
     {
         $this->assertSame('/[redacted]', (new RouteRedaction(['/{a?}/{b}{c}']))->path('/1/23'));
