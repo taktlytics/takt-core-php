@@ -10,6 +10,8 @@ final class RouteRedaction
     private const PARAM = '#\[[^\]]+\]|:\w+(\([^)]*\))?|\{\w+(<[^>]*>)?(\?[^}]*)?\}#';
     private const BRACE = '#\{(\w+)(<[^>]*>)?(\?[^}]*)?\}#';
     private const RESERVED_ESCAPES = ['23', '24', '26', '2B', '2C', '2F', '3A', '3B', '3D', '3F', '40'];
+    private const FAILED_OUTPUT = '/[redacted]';
+    private const MAX_DECODE_PASSES = 5;
 
     /** @var list<array{regex:string,output:string}> */
     private readonly array $routes;
@@ -118,7 +120,7 @@ final class RouteRedaction
             }
         }
 
-        return '#^' . $source . '/?$#D';
+        return '#^' . $source . '/?$#Di';
     }
 
     private static function segmentSource(string $segment): string
@@ -136,14 +138,90 @@ final class RouteRedaction
 
     private function redactedPath(string $pathname): ?string
     {
-        $decoded = self::decodeUri($pathname);
+        if ($this->routes === []) {
+            return null;
+        }
+        $forms = self::candidateForms($pathname);
+        if ($forms === null) {
+            return self::FAILED_OUTPUT;
+        }
+        $candidates = array_values(array_unique(array_map(self::normalize(...), $forms)));
         foreach ($this->routes as $route) {
-            if (preg_match($route['regex'], $pathname) === 1 || preg_match($route['regex'], $decoded) === 1) {
-                return $route['output'];
+            foreach ($candidates as $candidate) {
+                $matched = preg_match($route['regex'], $candidate);
+                if ($matched === false) {
+                    return self::FAILED_OUTPUT;
+                }
+                if ($matched === 1) {
+                    return $route['output'];
+                }
             }
         }
 
         return null;
+    }
+
+    /** @return list<string>|null */
+    private static function candidateForms(string $pathname): ?array
+    {
+        $forms = [$pathname, self::decodeUri($pathname)];
+        $current = $pathname;
+        for ($pass = 0; rawurldecode($current) !== $current; $pass++) {
+            if ($pass === self::MAX_DECODE_PASSES) {
+                return null;
+            }
+            $current = rawurldecode($current);
+            $forms[] = $current;
+        }
+
+        return array_merge($forms, array_map(self::stripMatrixParameters(...), $forms));
+    }
+
+    private static function stripMatrixParameters(string $path): string
+    {
+        $truncate = static fn (string $segment): string => explode(';', $segment, 2)[0];
+
+        return implode('/', array_map($truncate, explode('/', $path)));
+    }
+
+    private static function normalize(string $path): string
+    {
+        return self::collapseSlashes(self::removeDotSegments(self::collapseSlashes($path)));
+    }
+
+    private static function collapseSlashes(string $path): string
+    {
+        while (str_contains($path, '//')) {
+            $path = str_replace('//', '/', $path);
+        }
+
+        return $path;
+    }
+
+    private static function removeDotSegments(string $path): string
+    {
+        $absolute = str_starts_with($path, '/');
+        $segments = explode('/', $absolute ? substr($path, 1) : $path);
+        $last = count($segments) - 1;
+        $output = [];
+        foreach ($segments as $index => $segment) {
+            if ($segment === '.') {
+                if ($index === $last) {
+                    $output[] = '';
+                }
+                continue;
+            }
+            if ($segment === '..') {
+                array_pop($output);
+                if ($index === $last) {
+                    $output[] = '';
+                }
+                continue;
+            }
+            $output[] = $segment;
+        }
+
+        return ($absolute ? '/' : '') . implode('/', $output);
     }
 
     private function rewrite(string $url, ?string $template): string
@@ -157,7 +235,7 @@ final class RouteRedaction
             return $url;
         }
 
-        return $parts['origin'] . $path . $parts['suffix'];
+        return $parts['origin'] . $path;
     }
 
     private static function origin(string $url): ?string
@@ -165,7 +243,7 @@ final class RouteRedaction
         return self::parse($url)['origin'] ?? null;
     }
 
-    /** @return array{origin:string,path:string,suffix:string}|null */
+    /** @return array{origin:string,path:string}|null */
     private static function parse(string $url): ?array
     {
         $parts = parse_url(trim($url));
@@ -179,19 +257,15 @@ final class RouteRedaction
             $origin .= ':' . $port;
         }
         $path = $parts['path'] ?? '';
-        $suffix = (isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '')
-            . (isset($parts['fragment']) && $parts['fragment'] !== '' ? '#' . $parts['fragment'] : '');
-
-        return ['origin' => $origin, 'path' => $path !== '' ? $path : '/', 'suffix' => $suffix];
+        return ['origin' => $origin, 'path' => $path !== '' ? $path : '/'];
     }
 
     private static function decodeUri(string $path): string
     {
-        $decoded = preg_replace_callback(
-            '#%([0-9A-Fa-f]{2})#',
-            static fn (array $m): string => in_array(strtoupper($m[1]), self::RESERVED_ESCAPES, true) ? $m[0] : chr((int) hexdec($m[1])),
-            $path,
-        );
+        $decodeEscape = static fn (array $m): string => in_array(strtoupper($m[1]), self::RESERVED_ESCAPES, true)
+            ? $m[0]
+            : chr((int) hexdec($m[1]));
+        $decoded = preg_replace_callback('#%([0-9A-Fa-f]{2})#', $decodeEscape, $path);
 
         return $decoded !== null && preg_match('//u', $decoded) === 1 ? $decoded : $path;
     }

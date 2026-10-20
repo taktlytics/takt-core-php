@@ -206,6 +206,81 @@ final class TaktTest extends TestCase
         $this->assertSame($expected, (string) $mock->getLastRequest()->getUri());
     }
 
+    /** @return iterable<string,array{string}> */
+    public static function insecureEndpoints(): iterable
+    {
+        yield 'plain http origin' => ['http://takt.example.com'];
+        yield 'plain http collect url' => ['http://takt.example.com/api/event'];
+        yield 'uppercase scheme' => ['HTTP://takt.example.com'];
+        yield 'loopback name as subdomain' => ['http://localhost.example.com'];
+        yield 'loopback prefix of a public ip' => ['http://127.0.0.1.example.com'];
+        yield 'public ip' => ['http://203.0.113.7'];
+        yield 'localhost' => ['http://localhost'];
+        yield 'localhost with port' => ['http://localhost:8000'];
+        yield 'ipv4 loopback' => ['http://127.0.0.1:8000'];
+        yield 'ipv4 loopback block' => ['http://127.8.9.10'];
+        yield 'ipv6 loopback' => ['http://[::1]:8000'];
+        yield 'ftp scheme' => ['ftp://takt.example.com'];
+        yield 'port out of range' => ['http://evil.com:99999'];
+        yield 'http without host' => ['http:///evil.com'];
+        yield 'https without host' => ['https:evil.com'];
+        yield 'protocol relative host' => ['//evil.com'];
+        yield 'protocol relative host with path' => ['//evil.com/api/event'];
+        yield 'backslash host' => ['\\\\evil.com/api/event'];
+        yield 'bare host' => ['evil.com/api/event'];
+        yield 'tab then protocol relative host' => ["/\tevil.com/api/event"];
+    }
+
+    #[DataProvider('insecureEndpoints')]
+    public function test_constructor_refuses_non_https_endpoint(string $endpoint): void
+    {
+        $mock = new Client();
+        $psr17 = new Psr17Factory();
+        try {
+            $takt = new Takt(
+                endpoint: $endpoint,
+                domain: 'example.com',
+                apiKey: 'k_secret',
+                httpClient: $mock,
+                requestFactory: $psr17,
+                streamFactory: $psr17,
+            );
+            $takt->pageview('https://example.com/');
+        } catch (\InvalidArgumentException) {
+        }
+
+        $this->assertCount(0, $mock->getRequests());
+    }
+
+    /** @return iterable<string,array{string,string}> */
+    public static function httpsLoopbackEndpoints(): iterable
+    {
+        yield 'localhost' => ['https://localhost', 'https://localhost/api/event'];
+        yield 'localhost with port' => ['https://localhost:8000', 'https://localhost:8000/api/event'];
+        yield 'ipv4 loopback' => ['https://127.0.0.1:8000', 'https://127.0.0.1:8000/api/event'];
+        yield 'ipv6 loopback' => ['https://[::1]:8000', 'https://[::1]:8000/api/event'];
+    }
+
+    #[DataProvider('httpsLoopbackEndpoints')]
+    public function test_constructor_accepts_https_on_loopback(string $endpoint, string $expected): void
+    {
+        $psr17 = new Psr17Factory();
+        $mock = new Client();
+        $mock->addResponse(new Response(202));
+        $takt = new Takt(
+            endpoint: $endpoint,
+            domain: 'example.com',
+            apiKey: 'k_test',
+            httpClient: $mock,
+            requestFactory: $psr17,
+            streamFactory: $psr17,
+        );
+
+        $takt->pageview('https://example.com/');
+
+        $this->assertSame($expected, (string) $mock->getLastRequest()->getUri());
+    }
+
     /** @param list<string> $redactRoutes */
     private function makeRedactingClient(Client $mock, array $redactRoutes): Takt
     {
@@ -235,7 +310,7 @@ final class TaktTest extends TestCase
             ->pageview('https://example.com/verify/abc?x=1', 'https://example.com/verify/old');
 
         $body = self::lastBody($mock);
-        $this->assertSame('https://example.com/verify/{token}?x=1', $body['u']);
+        $this->assertSame('https://example.com/verify/{token}', $body['u']);
         $this->assertSame('https://example.com/verify/{token}', $body['r']);
     }
 

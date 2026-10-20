@@ -39,6 +39,7 @@ final class Takt
         ?StreamFactoryInterface $streamFactory = null,
         private readonly array $redactRoutes = [],
     ) {
+        EndpointPolicy::assertSecure($endpoint);
         $this->httpClient = $httpClient ?? Psr18ClientDiscovery::find();
         $this->requestFactory = $requestFactory ?? Psr17FactoryDiscovery::findRequestFactory();
         $this->streamFactory = $streamFactory ?? Psr17FactoryDiscovery::findStreamFactory();

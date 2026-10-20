@@ -2,6 +2,7 @@
 
 namespace Vskstudio\Takt\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vskstudio\Takt\Mode;
 use Vskstudio\Takt\Options;
@@ -158,5 +159,61 @@ final class OptionsTest extends TestCase
     {
         $o = Options::fromArray(['domain' => 'a.com', 'mode' => 'sdk']);
         $this->assertSame(Mode::Sdk, $o->mode);
+    }
+
+    public function test_http_endpoint_is_refused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: 'http://takt.example.com/api/event');
+    }
+
+    public function test_from_array_refuses_http_endpoint(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Options::fromArray(['domain' => 'a.com', 'endpoint' => 'http://takt.example.com']);
+    }
+
+    public function test_http_endpoint_on_localhost_is_refused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: 'http://localhost:8000/api/event');
+    }
+
+    public function test_malformed_endpoint_is_refused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: 'https:///api/event');
+    }
+
+    public function test_https_endpoint_on_localhost_is_accepted(): void
+    {
+        $o = new Options(domain: 'a.com', endpoint: 'https://localhost:8000/api/event');
+        $this->assertSame('https://localhost:8000/api/event', $o->endpoint);
+    }
+
+    public function test_relative_endpoint_is_accepted(): void
+    {
+        $o = new Options(domain: 'a.com', endpoint: '/api/event');
+        $this->assertSame('/api/event', $o->endpoint);
+    }
+
+    /** @return iterable<string,array{string}> */
+    public static function schemeLessHostEndpoints(): iterable
+    {
+        yield 'protocol relative' => ['//evil.com/api/event'];
+        yield 'backslash host' => ['\\\\evil.com/api/event'];
+        yield 'bare host' => ['evil.com/api/event'];
+    }
+
+    #[DataProvider('schemeLessHostEndpoints')]
+    public function test_scheme_less_endpoint_with_a_host_is_refused(string $endpoint): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: $endpoint);
     }
 }

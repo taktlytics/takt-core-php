@@ -49,6 +49,14 @@ final class RouteRedactionTest extends TestCase
         yield 'brace optional absent' => ['/posts/{page?}', '/posts', '/posts/{page}'];
         yield 'brace optional present' => ['/posts/{page?}', '/posts/3', '/posts/{page}'];
         yield 'encoded path' => ['/café/[id]', '/caf%C3%A9/9', '/café/[id]'];
+        yield 'encoded slash' => ['/orders/[id]', '/orders%2F123', '/orders/[id]'];
+        yield 'lowercase encoded slash' => ['/orders/[id]', '/orders%2f123', '/orders/[id]'];
+        yield 'encoded slash in the middle' => ['/orders/[id]/items', '/orders%2F123/items', '/orders/[id]/items'];
+        yield 'uppercase path' => ['/orders/[id]', '/Orders/123', '/orders/[id]'];
+        yield 'uppercase literal with param' => ['/Orders/[id]', '/orders/123', '/Orders/[id]'];
+        yield 'leading double slash' => ['/orders/[id]', '//orders/123', '/orders/[id]'];
+        yield 'inner double slash' => ['/orders/[id]', '/orders//123', '/orders/[id]'];
+        yield 'trailing double slash' => ['/orders/[id]', '/orders/123//', '/orders/[id]'];
     }
 
     #[DataProvider('matchingPaths')]
@@ -73,6 +81,29 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame($path, (new RouteRedaction([$pattern]))->path($path));
     }
 
+    public function test_pattern_failing_to_evaluate_never_leaks_the_raw_path(): void
+    {
+        $path = '/x/' . str_repeat('a', 2000) . '.json.x';
+        $redacted = (new RouteRedaction(['/x/:a:b:c.json']))->path($path);
+
+        $this->assertNotSame($path, $redacted);
+        $this->assertStringNotContainsString('aaaa', $redacted);
+    }
+
+    public function test_failing_pattern_does_not_leak_on_page_urls(): void
+    {
+        $url = 'https://example.com/x/' . str_repeat('a', 2000) . '.json.x?t=1';
+        $page = (new RouteRedaction(['/x/:a:b:c.json']))->page($url);
+
+        $this->assertSame('https://example.com/[redacted]', $page);
+    }
+
+    public function test_long_run_of_slashes_is_collapsed_before_matching(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame('/verify/[token]', $redaction->path('/verify'.str_repeat('/', 5000).'abc'));
+    }
+
     public function test_first_matching_pattern_wins(): void
     {
         $redaction = new RouteRedaction(['/a/[x]', '/a/:y']);
@@ -85,19 +116,100 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('https://example.com/a', $redaction->page('https://example.com/a'));
     }
 
-    public function test_page_keeps_origin_query_and_hash(): void
+    public function test_page_drops_query_and_hash_when_path_is_masked(): void
     {
         $redaction = new RouteRedaction(['/verify/[token]']);
         $this->assertSame(
-            'https://example.com/verify/[token]?a=1#h',
-            $redaction->page('https://Example.com:443/verify/abc?a=1#h'),
+            'https://example.com/verify/[token]',
+            $redaction->page('https://Example.com:443/verify/abc?token=secret#h'),
         );
+    }
+
+    public function test_page_keeps_query_and_hash_when_path_is_not_masked(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame(
+            'https://example.com/other?a=1#h',
+            $redaction->page('https://example.com/other?a=1#h'),
+        );
+    }
+
+    public function test_double_encoded_separator_is_matched(): void
+    {
+        $this->assertSame('/files/[name]', (new RouteRedaction(['/files/[name]']))->path('/files%252Fsecret'));
+    }
+
+    public function test_triple_encoded_separator_is_matched(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/orders%25252F123'));
+    }
+
+    public function test_quadruple_encoded_path_is_matched(): void
+    {
+        $path = '/orders'.self::encoded('/123', 4);
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path($path));
+    }
+
+    public function test_path_still_encoded_after_the_decoding_bound_is_masked(): void
+    {
+        $path = '/orders'.self::encoded('/123', 6);
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/orders/[id]']))->path($path));
+    }
+
+    public function test_triple_encoded_dot_segments_are_removed(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/%25252e%25252e/orders/123'));
+    }
+
+    public function test_matrix_parameters_are_ignored_before_matching(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/orders;a=1/123'));
+        $this->assertSame('/admin/[x]', (new RouteRedaction(['/admin/[x]']))->path('/admin;x/secret'));
+    }
+
+    public function test_matrix_truncation_happens_before_dot_segment_removal(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/a/..;/orders/123'));
+        $this->assertSame('/admin/[x]', (new RouteRedaction(['/admin/[x]']))->path('/x/..;/admin/secret'));
+    }
+
+    public function test_path_encoded_exactly_the_maximum_number_of_times_is_matched(): void
+    {
+        $path = '/orders'.self::encoded('/123', 5);
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path($path));
+    }
+
+    public function test_raw_path_is_matched_for_patterns_with_literal_escapes(): void
+    {
+        $this->assertSame('/a%20b/[x]', (new RouteRedaction(['/a%20b/[x]']))->path('/a%20b/1'));
+    }
+
+    public function test_templated_page_drops_query_and_hash(): void
+    {
+        $redaction = new RouteRedaction([], '/blog/{slug?}');
+        $this->assertSame('https://example.com/blog/{slug}', $redaction->page('https://example.com/blog/hello?x=1#f'));
+    }
+
+    private static function encoded(string $path, int $times): string
+    {
+        for ($i = 0; $i < $times; $i++) {
+            $path = rawurlencode($path);
+        }
+
+        return $path;
+    }
+
+    public function test_dot_segments_are_removed_before_matching(): void
+    {
+        $redaction = new RouteRedaction(['/admin/[x]']);
+        $this->assertSame('/admin/[x]', $redaction->path('/orders/%2e%2e/admin/secret'));
+        $this->assertSame('/admin/[x]', $redaction->path('/admin/x/../../admin/secret'));
     }
 
     public function test_page_keeps_a_non_default_port(): void
     {
         $redaction = new RouteRedaction(['/verify/[token]']);
-        $this->assertSame('http://localhost:8000/verify/[token]', $redaction->page('http://localhost:8000/verify/abc'));
+        $this->assertSame('https://localhost:8000/verify/[token]', $redaction->page('https://localhost:8000/verify/abc'));
     }
 
     public function test_page_leaves_an_unparsable_url_untouched(): void

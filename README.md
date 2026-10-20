@@ -53,6 +53,8 @@ By default the snippet ingests to the hosted Takt origin — `https://taktlytics
 - `endpoint: 'https://collect.example.com/api/event'` — any custom absolute collector URL.
 - `scriptOrigin: 'https://t.example.com'` — let the tracker derive `{scriptOrigin}/api/event` (first-party, anti-adblock). `endpoint` wins over `scriptOrigin`.
 
+An `endpoint` with a scheme other than `https` is refused with an `InvalidArgumentException`, `http://localhost` included, because the server client sends the API key as a Bearer header on every call. A scheme-less endpoint is accepted only when it is a path starting with a single `/`, such as `/api/event`, for the same-origin proxy of the snippet; `//host/…`, `\\host/…` and `host/…` are refused. For local development, serve your collector over local https (for example with [mkcert](https://github.com/FiloSottile/mkcert), whose certificate your machine trusts) and point `endpoint` at `https://localhost:…`.
+
 Autocapture is opt-in and bundled into the vendored `takt.auto.js`. Each toggle adds a token to a single `data-auto` attribute the tracker reads:
 
 - `outbound: true` — outbound link clicks (`outbound`)
@@ -108,6 +110,8 @@ new Options(
 ```
 
 `redactRoutes` lists the sensitive routes. A matching path is sent as the pattern, every other path keeps its real value. Patterns accept `[param]`, `[[optional]]`, `[...rest]`, `(group)`, `:param`, `:param?`, `*`, `**`, and the Laravel / Symfony syntax `{param}` and `{param?}`. The browser SDK does not read the brace syntax, so the renderer hands it `{token}` as `[token]` and `{page?}` as `[[page]]`: the browser sends `/verify/[token]` where the server client sends `/verify/{token}`. Write bracket patterns if both must report the same row.
+
+Matching is applied to several spellings of the same path, so an encoded or unusual URL cannot slip past a pattern: the raw path, the path with `%2F` decoded as a separator, and the fully decoded path are all tried, the path being decoded up to five times. Each spelling has repeated slashes collapsed, its `.` and `..` segments removed as in RFC 3986, and its matrix parameters (`;...`) ignored; matching is case-insensitive. A path still encoded after the five passes is sent as `/[redacted]`. When a pattern matches, the whole URL is replaced by the pattern, so the query string and fragment are dropped too and a token in `?token=` cannot leak. If a pattern cannot be evaluated (the PCRE engine gives up on a very long segment), the path is sent as `/[redacted]`, again without query or fragment, rather than in clear.
 
 ```php
 new Options(domain: 'example.com', mode: Mode::Sdk, routeTemplates: true, routeTemplate: '/users/{id}');

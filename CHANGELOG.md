@@ -1,5 +1,28 @@
 # vskstudio/takt-core-php
 
+## Unreleased
+
+### Breaking Changes
+
+- `Takt` and `Options` refuse every endpoint that is not `https`, `localhost`
+  and loopback included, and refuse a scheme-less endpoint unless it is a path
+  starting with a single `/`. A `http://` or `//host` endpoint throws an
+  `InvalidArgumentException` at construction, so the API key is never sent in
+  clear or to an unexpected host. Local development serves its collector over
+  local https.
+
+### Minor Changes
+
+- Route redaction matching also tries the path decoded up to five times,
+  ignores matrix parameters (`;...`) and removes `.` and `..` segments (RFC
+  3986) before matching. A path still encoded after the five passes is sent as
+  `/[redacted]`, and the raw path is never sent on failure. A masked page or
+  pathname drops its query string and fragment, the `/[redacted]` fallback
+  included, and so does a page sent under `routeTemplates`.
+  The matching cost is up to 14 candidate forms compared per path and route:
+  seven spellings (the raw path, the `decodeUri` form, and up to five
+  `rawurldecode` passes), each also tried with its matrix parameters ignored.
+
 ## 0.6.1
 
 ### Patch Changes
