@@ -405,12 +405,105 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/[redacted]', (new RouteRedaction(['/x/{a<b/c}']))->path('/x/zzz'));
     }
 
-    public function test_unusable_route_masks_only_when_the_usable_constraint_holds(): void
+    public function test_unusable_route_masks_its_whole_shape(): void
     {
         $redaction = new RouteRedaction(['/x/{a<[>}/{b<\\d+>}']);
-        $this->assertSame('/x/zz/abc', $redaction->path('/x/zz/abc'));
+        $this->assertSame('/[redacted]', $redaction->path('/x/zz/abc'));
         $this->assertSame('/[redacted]', $redaction->path('/x/zz/12'));
+        $this->assertSame('/x/zz', $redaction->path('/x/zz'));
     }
+
+    /** @return iterable<string,array{string,string,string}> */
+    public static function parityProbes(): iterable
+    {
+        yield 'first greedy capture does not decide' => ['/x/{p<\\d+>}x{q}', '/x/1x2x3', '/x/{p}x{q}'];
+        yield 'dot covers a line feed byte' => ['/x/{p<.{3}>}', '/x/a%0Ab', '/x/{p}'];
+        yield 'dot counts bytes, not characters' => ['/x/{p<.{2}>}', '/x/%C3%A9', '/x/{p}'];
+        yield 'four byte character is not two dots' => ['/x/{p<.{2}>}', '/x/%F0%9F%99%82', '/x/%F0%9F%99%82'];
+        yield 'nbsp is two bytes under dot' => ['/x/{p<.{2}>}', '/x/%C2%A0', '/x/{p}'];
+        yield 'negated class counts bytes' => ['/x/{p<[^a]{2}>}', '/x/%C3%A9', '/x/{p}'];
+        yield 'nbsp is not whitespace' => ['/x/{p<\\s>}', '/x/%C2%A0', '/x/%C2%A0'];
+        yield 'space is whitespace' => ['/x/{p<\\s>}', '/x/%20', '/x/{p}'];
+        yield 'negated word class counts bytes' => ['/x/{p<\\W{2}>}', '/x/%C3%A9', '/x/{p}'];
+        yield 'single dot does not match a two byte character' => ['/x/{p<.>}', '/x/%C3%A9', '/x/%C3%A9'];
+        yield 'utf8 literal does not fold to its uppercase' => ["/x/\u{e9}", '/x/%C3%89', '/x/%C3%89'];
+        yield 'utf8 literal matches itself' => ["/x/\u{e9}", '/x/%C3%A9', "/x/\u{e9}"];
+        yield 'utf8 literal does not fold to a neighbour' => ["/x/\u{c3}", '/x/%C3%A3', '/x/%C3%A3'];
+        yield 'ascii literal still folds' => ['/x/a', '/x/A', '/x/a'];
+        yield 'constraint of a dash range ending on a dash' => ['/x/{p<[!--]+>}', '/x/a', '/[redacted]'];
+        yield 'constraint range spanning a slash' => ['/x/{p<[ -~]+>}', '/x/a', '/[redacted]'];
+        yield 'constraint range spanning a slash in a negated class' => ['/x/{p<[!-~]+>}', '/x/a', '/[redacted]'];
+        yield 'constraint with a non ascii byte range' => ['/x/{p<[ -~]+>}', '/x/%C3%A9', '/[redacted]'];
+        yield 'brace in the remainder after a constraint' => ['/x/{p<a>b>}', '/x/ab', '/[redacted]'];
+        yield 'angle bracket after an opening angle bracket' => ['/x/{p<<a>}', '/x/a', '/[redacted]'];
+        yield 'slash inside a class' => ['/x/{p<[^/]>}', '/x/a', '/[redacted]'];
+        yield 'constraint with an escaped slash' => ['/x/{p<\\/>}', '/x/a', '/[redacted]'];
+        yield 'counted repetition with reversed bounds' => ['/x/{p<a{3,2}>}', '/x/aaa', '/[redacted]'];
+        yield 'exact repetition is not counted' => ['/x/{p<a{3}>}', '/x/aaa', '/x/{p}'];
+        yield 'exact repetitions are not counted across the route' => ['/x/{p<a{3}b{3}c{3}>}', '/x/aaabbbccc', '/x/{p}'];
+        yield 'two route variables are usable' => ['/x/{a<\\d+>}/{b<\\d+>}', '/x/1/2', '/x/{a}/{b}'];
+        yield 'three route variables make the route unusable' => ['/x/{a<\\d+>}/{b<\\d+>}/{c<\\d+>}', '/x/1/2/3', '/[redacted]'];
+        yield 'three route variables leave a shorter path raw' => ['/x/{a<\\d+>}/{b<\\d+>}/{c<\\d+>}', '/x/1/2', '/x/1/2'];
+        yield 'two constrained params in one segment' => ['/x/{a<\\d>}{b<\\d>}', '/x/12', '/[redacted]'];
+        yield 'three unconstrained params in one segment' => ['/x/{a}{b}{c}', '/x/abc', '/[redacted]'];
+        yield 'six unconstrained params in one segment' => ['/x/{a}{b}{c}{d}{e}{f}', '/x/abcdef', '/[redacted]'];
+        yield 'four adjacent constrained params' => ['/x/{a<a*>}{b<a*>}{c<a*>}{d<a*>}', '/x/aaaa', '/[redacted]'];
+        yield 'two params in a segment are fine' => ['/x/{a}/{b}', '/x/a/b', '/x/{a}/{b}'];
+    }
+
+    #[DataProvider('parityProbes')]
+    public function test_parity_probe_matches_the_browser_sdk(string $route, string $path, string $expected): void
+    {
+        $this->assertSame($expected, (new RouteRedaction([$route]))->path($path));
+    }
+
+    /** @return iterable<string,array{string,string}> */
+    public static function oneBadConstraintAmongGoodOnes(): iterable
+    {
+        yield 'reversed range next to a digit' => ['/x/{a<\\d+>}/{b<[z-a]>}', '/x/1/m'];
+        yield 'hyphen after a class escape next to a digit' => ['/x/{a<\\d+>}/{b<[\\d-z]>}', '/x/1/a'];
+        yield 'reversed counted repetition next to a digit' => ['/x/{a<\\d+>}/{b<a{3,2}>}', '/x/1/aaa'];
+        yield 'escaped slash next to a digit' => ['/x/{a<\\d+>}/{b<\\/>}', '/x/1/a'];
+        yield 'control character next to a digit' => ["/x/{a<\\d+>}/{b<a\tb>}", '/x/1/a'];
+        yield 'space range spanning a slash next to a digit' => ['/x/{a<\\d+>}/{b<[ -~]+>}', '/x/1/a'];
+    }
+
+    #[DataProvider('oneBadConstraintAmongGoodOnes')]
+    public function test_one_bad_constraint_makes_the_whole_route_unusable(string $route, string $path): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction([$route]))->path($path));
+    }
+
+
+    public function test_unusable_segment_with_two_params_folds_to_one_joker(): void
+    {
+        $redaction = new RouteRedaction(['/x/{a<[>}{b}']);
+        $this->assertSame('/[redacted]', $redaction->path('/x/a'));
+        $this->assertSame('/[redacted]', $redaction->path('/x/ab'));
+    }
+
+    public function test_segment_limit_counts_bytes_not_characters(): void
+    {
+        $redaction = new RouteRedaction(['/x/{p<.+>}']);
+        $this->assertSame('/x/{p}', $redaction->path('/x/'.str_repeat('é', 128)));
+        $this->assertSame('/[redacted]', $redaction->path('/x/'.str_repeat('é', 129)));
+    }
+
+    public function test_setlocale_does_not_change_the_result(): void
+    {
+        if (setlocale(LC_CTYPE, 'fr_FR.UTF-8', 'C.UTF-8') === false) {
+            $this->markTestSkipped('Aucune locale UTF-8 disponible.');
+        }
+        try {
+            $this->assertSame('/x/{p}', (new RouteRedaction(['/x/{p<.{2}>}']))->path('/x/%C3%A9'));
+            $this->assertSame('/x/%C2%A0', (new RouteRedaction(['/x/{p<\\s>}']))->path('/x/%C2%A0'));
+            $this->assertSame('/x/%C3%89', (new RouteRedaction(["/x/\u{e9}"]))->path('/x/%C3%89'));
+            $this->assertSame('/x/{p}', (new RouteRedaction(['/x/{p<\\d+>}']))->path('/x/12'));
+        } finally {
+            setlocale(LC_CTYPE, 'C');
+        }
+    }
+
 
     public function test_overlong_segment_masks_even_when_the_constraint_breaks(): void
     {

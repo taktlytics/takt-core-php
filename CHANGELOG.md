@@ -38,19 +38,26 @@
 - A constraint `{name<regex>}` is anchored on the whole segment, cannot match
   across a `/`, and is matched case-insensitively. The constraint must follow a
   restricted grammar, not PCRE: alternation only at the top level, atoms that
-  are literals, `.`, `\d \D \w \W \s \S`, escaped ASCII punctuation (not
-  `/`) or a class `[...]` without nesting, quantifiers `* + ? {n} {n,} {n,m}`
-  with bounds up to 100, no lazy or possessive quantifiers, no two quantifiers
-  in a row, at most two variable quantifiers per constraint (`{n,n}` counts),
-  at most 100 characters, and no empty branch. Literals exclude `<` and `>`; a
-  class range cannot end on `-`, an escape or `<`/`>`, nor span `/`. Groups,
-  lookarounds, backreferences, anchors and `/` are refused. A constraint
-  outside the grammar makes the route unusable: a path matching its shape,
-  with that parameter read as any value, is masked as `/[redacted]`, and other
-  paths are unaffected. A stray `{` or `}` in a segment makes the route
-  unusable the same way. A value longer than 256 bytes for a constrained
-  parameter is masked before the constraint is checked. A `/` inside `<...>`
-  does not split the route into segments, and `.` never matches `/`.
+  are literals, `.` (any byte except `/`), `\d \D \w \W \s \S`, escaped ASCII
+  punctuation (not `/`) or a class `[...]` without nesting, quantifiers
+  `* + ? {n} {n,} {n,m}` with bounds up to 100 (`{n}` is not counted as a
+  variable quantifier, `{,m}` is refused, `{0}` is allowed), no lazy or
+  possessive quantifiers, no two quantifiers in a row, at most two variable
+  quantifiers per constraint (`{n,n}` counts), at most 100 characters, and no
+  empty branch. Literals exclude `<` and `>`; a class range cannot end on `-`,
+  an escape or `<`/`>`, nor span `/`, and a `]` cannot open a class. Groups,
+  lookarounds, backreferences, anchors and `/` are refused. The grammar counts
+  bytes, not characters: `\d`, `\w` and `\s` are ASCII only.
+- A route is unusable when one of its constraints is refused, when its
+  constraints hold more than two variable quantifiers in total, when one
+  segment holds more than one constrained parameter or more than two variable
+  quantifiers (each unconstrained parameter counts as one), or when a stray `{`
+  or `}` remains in a segment. An unusable route masks, as `/[redacted]`, every
+  path with the same shape (each parameter reads as any value, and the
+  parameters of one segment read as one value); other paths are unaffected. A
+  value longer than 256 bytes for a constrained parameter is masked before the
+  constraint is checked. A `/` inside `<...>` does not split the route into
+  segments.
 
 ## 0.6.1
 
