@@ -19,6 +19,14 @@
   that cannot be parsed goes out with an empty `u` (refused by the ingest)
   instead of the raw URL. The same holds with `redactRoutes` alone, without a
   template. With no masking option configured, nothing changes.
+- A URL that `parse_url` and a browser may read differently is never guessed.
+  When a masking option is configured, a page URL or a referrer containing a
+  backslash, a tab, a line break, another control character, leading or trailing
+  spaces, user information (`user@host`) or a host with a space is treated as
+  unparsable: the page goes out with an empty `u`, and the referrer is dropped.
+  Such a URL used to leak its path, for example `https://ex.com\verify\TOKEN`
+  against `/verify/[token]`. Nothing is normalised. With no masking option
+  configured, nothing changes.
 
 ## 0.7.0
 
