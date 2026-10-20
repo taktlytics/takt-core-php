@@ -12,8 +12,9 @@ final class RouteRedaction
     private const RESERVED_ESCAPES = ['23', '24', '26', '2B', '2C', '2F', '3A', '3B', '3D', '3F', '40'];
     private const FAILED_OUTPUT = '/[redacted]';
     private const MAX_DECODE_PASSES = 5;
+    private const CONSTRAINT_DELIMITER = "\x01";
 
-    /** @var list<array{regex:string,output:string}> */
+    /** @var list<array{output:string,regex:?string,constraints:list<array{group:int,pattern:string}>}> */
     private readonly array $routes;
 
     private readonly ?string $template;
@@ -28,7 +29,7 @@ final class RouteRedaction
         foreach ($redactRoutes as $pattern) {
             $pattern = trim($pattern);
             if ($pattern !== '') {
-                $routes[] = ['regex' => self::compile($pattern), 'output' => self::canonical($pattern)];
+                $routes[] = self::route($pattern);
             }
         }
         $this->routes = $routes;
@@ -45,9 +46,19 @@ final class RouteRedaction
     {
         return preg_replace_callback(
             self::BRACE,
-            static fn (array $m): string => isset($m[3]) && $m[3] !== '' ? '[[' . $m[1] . ']]' : '[' . $m[1] . ']',
+            static fn (array $m): string => self::browserParam($m),
             $pattern,
         ) ?? $pattern;
+    }
+
+    /** @param array<int, string> $m */
+    private static function browserParam(array $m): string
+    {
+        if (isset($m[2]) && $m[2] !== '') {
+            return $m[0];
+        }
+
+        return isset($m[3]) && $m[3] !== '' ? '[[' . $m[1] . ']]' : '[' . $m[1] . ']';
     }
 
     public function templated(): bool
@@ -110,33 +121,97 @@ final class RouteRedaction
         return preg_replace(self::BRACE, '{$1}', $segment) ?? $segment;
     }
 
-    private static function compile(string $pattern): string
+    /** @return array{output:string,regex:?string,constraints:list<array{group:int,pattern:string}>} */
+    private static function route(string $pattern): array
     {
         $source = '';
+        $constraints = [];
         foreach (self::segments($pattern) as $segment) {
             if (preg_match(self::REST, $segment) === 1) {
                 $source .= '(?:/.*)?';
             } elseif (preg_match(self::OPTIONAL, $segment) === 1) {
-                $source .= '(?:/[^/]+)?';
+                $source .= self::constraintOf($segment) !== null
+                    ? '(?:/' . self::segmentSource($segment, $constraints) . ')?'
+                    : '(?:/[^/]+)?';
             } else {
-                $source .= '/' . self::segmentSource($segment);
+                $source .= '/' . self::segmentSource($segment, $constraints);
             }
         }
+        $valid = true;
+        foreach ($constraints as $constraint) {
+            $valid = $valid && self::isValidConstraint($constraint['pattern']);
+        }
 
-        return '#^' . $source . '/?$#Di';
+        return [
+            'output' => self::canonical($pattern),
+            'regex' => $valid ? '#^' . $source . '/?$#Di' : null,
+            'constraints' => $constraints,
+        ];
     }
 
-    private static function segmentSource(string $segment): string
+    /** @param list<array{group:int,pattern:string}> $constraints */
+    private static function segmentSource(string $segment, array &$constraints): string
     {
         preg_match_all(self::PARAM, $segment, $matches, PREG_OFFSET_CAPTURE);
         $source = '';
         $last = 0;
         foreach ($matches[0] as [$param, $offset]) {
-            $source .= preg_quote(substr($segment, $last, $offset - $last), '#') . '[^/]+';
+            $source .= preg_quote(substr($segment, $last, $offset - $last), '#');
+            $pattern = self::constraintOf($param);
+            if ($pattern === null) {
+                $source .= '[^/]+';
+            } else {
+                $constraints[] = ['group' => count($constraints) + 1, 'pattern' => $pattern];
+                $source .= '([^/]+)';
+            }
             $last = $offset + strlen($param);
         }
 
         return $source . preg_quote(substr($segment, $last), '#');
+    }
+
+    private static function constraintOf(string $param): ?string
+    {
+        return preg_match('#^\{\w+<([^>]*)>#', $param, $match) === 1 ? $match[1] : null;
+    }
+
+    private static function isValidConstraint(string $pattern): bool
+    {
+        if (str_contains($pattern, self::CONSTRAINT_DELIMITER)) {
+            return false;
+        }
+        set_error_handler(static fn (): bool => true);
+        try {
+            return preg_match(self::CONSTRAINT_DELIMITER . $pattern . self::CONSTRAINT_DELIMITER, '') !== false;
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * @param list<array{group:int,pattern:string}> $constraints
+     * @param array<int|string, string> $captures
+     */
+    private static function constraintsHold(array $constraints, array $captures): ?bool
+    {
+        foreach ($constraints as $constraint) {
+            $value = $captures[$constraint['group']] ?? '';
+            if ($value === '') {
+                continue;
+            }
+            $held = preg_match(
+                self::CONSTRAINT_DELIMITER . '^(?:' . $constraint['pattern'] . ')$' . self::CONSTRAINT_DELIMITER . 'Di',
+                $value,
+            );
+            if ($held === false) {
+                return null;
+            }
+            if ($held === 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function redactedPath(string $pathname): ?string
@@ -150,12 +225,22 @@ final class RouteRedaction
         }
         $candidates = array_values(array_unique(array_map(self::normalize(...), $forms)));
         foreach ($this->routes as $route) {
+            if ($route['regex'] === null) {
+                return self::FAILED_OUTPUT;
+            }
             foreach ($candidates as $candidate) {
-                $matched = preg_match($route['regex'], $candidate);
+                $matched = preg_match($route['regex'], $candidate, $captures);
                 if ($matched === false) {
                     return self::FAILED_OUTPUT;
                 }
-                if ($matched === 1) {
+                if ($matched !== 1) {
+                    continue;
+                }
+                $held = self::constraintsHold($route['constraints'], $captures);
+                if ($held === null) {
+                    return self::FAILED_OUTPUT;
+                }
+                if ($held) {
                     return $route['output'];
                 }
             }

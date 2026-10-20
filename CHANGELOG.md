@@ -18,6 +18,11 @@
   path matching no route is sent raw. Previously such a path was sent raw.
 - `RouteRedaction::path()` returns the route template when one is set, as the
   browser SDK does, instead of the path itself.
+- A constrained parameter `{name<regex>}` in a route pattern is enforced: a
+  segment whose value does not match the regex no longer matches the route, so
+  its path is sent as it is. Previously the constraint was ignored and any
+  value was masked. Browser patterns keep the brace form of a constrained
+  parameter, which needs a browser SDK that reads it.
 
 ### Minor Changes
 
@@ -30,6 +35,9 @@
   The matching cost is up to 14 candidate forms compared per path and route:
   seven spellings (the raw path, the `decodeUri` form, and up to five
   `rawurldecode` passes), each also tried with its matrix parameters ignored.
+- A constraint `{name<regex>}` is anchored on the whole segment, cannot match
+  across a `/`, and is matched case-insensitively. An invalid constraint, or one
+  that exhausts PCRE's backtrack limit, masks the path as `/[redacted]`.
 
 ## 0.6.1
 

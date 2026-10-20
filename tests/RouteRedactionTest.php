@@ -227,6 +227,49 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('https://example.com/blog/{slug}', $redaction->page('https://example.com/blog/hello?x=1#f'));
     }
 
+    public function test_constraint_matches_a_segment_that_respects_it(): void
+    {
+        $this->assertSame('/blog/{page}', (new RouteRedaction(['/blog/{page<\\d+>}']))->path('/blog/12'));
+    }
+
+    public function test_constraint_leaves_a_segment_that_breaks_it_raw(): void
+    {
+        $this->assertSame('/blog/abc', (new RouteRedaction(['/blog/{page<\\d+>}']))->path('/blog/abc'));
+    }
+
+    public function test_constraint_is_anchored_on_the_whole_segment(): void
+    {
+        $this->assertSame('/blog/12abc', (new RouteRedaction(['/blog/{page<\\d+>}']))->path('/blog/12abc'));
+    }
+
+    public function test_constraint_cannot_match_across_a_slash(): void
+    {
+        $this->assertSame('/blog/a/b', (new RouteRedaction(['/blog/{page<.+>}']))->path('/blog/a/b'));
+    }
+
+    public function test_invalid_constraint_masks_the_path(): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/x/{p<[>}']))->path('/x/abc'));
+    }
+
+    public function test_constraint_accepts_a_hash_character(): void
+    {
+        $this->assertSame('/x/{p}', (new RouteRedaction(['/x/{p<a#b>}']))->path('/x/a%23b'));
+    }
+
+    public function test_catastrophic_constraint_masks_the_path(): void
+    {
+        $path = '/x/'.str_repeat('a', 40).'c';
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/x/{p<(a+)+>}']))->path($path));
+    }
+
+    public function test_optional_constrained_segment_is_checked(): void
+    {
+        $redaction = new RouteRedaction(['/blog/{page<\\d+>?}']);
+        $this->assertSame('/blog/{page}', $redaction->path('/blog/7'));
+        $this->assertSame('/blog/x', $redaction->path('/blog/x'));
+    }
+
     private static function encoded(string $path, int $times): string
     {
         for ($i = 0; $i < $times; $i++) {
@@ -297,7 +340,7 @@ final class RouteRedactionTest extends TestCase
     {
         $this->assertSame('/verify/[token]', RouteRedaction::browserPattern('/verify/{token}'));
         $this->assertSame('/posts/[[page]]', RouteRedaction::browserPattern('/posts/{page?}'));
-        $this->assertSame('/blog/[page]', RouteRedaction::browserPattern('/blog/{page<\\d+>}'));
+        $this->assertSame('/blog/{page<\\d+>}', RouteRedaction::browserPattern('/blog/{page<\\d+>}'));
         $this->assertSame('/reset/:code', RouteRedaction::browserPattern('/reset/:code'));
     }
 }
