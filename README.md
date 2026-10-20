@@ -53,7 +53,7 @@ By default the snippet ingests to the hosted Takt origin — `https://taktlytics
 - `endpoint: 'https://collect.example.com/api/event'` — any custom absolute collector URL.
 - `scriptOrigin: 'https://t.example.com'` — let the tracker derive `{scriptOrigin}/api/event` (first-party, anti-adblock). `endpoint` wins over `scriptOrigin`.
 
-An `endpoint` over plain `http://` is refused with an `InvalidArgumentException`, because the server client sends the API key as a Bearer header on every call. `http://localhost`, `http://127.0.0.0/8` and `http://[::1]` stay accepted for local development. Use `https://` for any other host.
+An `endpoint` with a scheme other than `https` is refused with an `InvalidArgumentException`, `http://localhost` included, because the server client sends the API key as a Bearer header on every call. A scheme-less endpoint such as `/api/event` stays valid for the same-origin proxy of the snippet. For local development, serve your collector over local https (for example with [mkcert](https://github.com/FiloSottile/mkcert), whose certificate your machine trusts) and point `endpoint` at `https://localhost:…`.
 
 Autocapture is opt-in and bundled into the vendored `takt.auto.js`. Each toggle adds a token to a single `data-auto` attribute the tracker reads:
 
