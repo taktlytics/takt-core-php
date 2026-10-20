@@ -1,6 +1,6 @@
 # vskstudio/takt-core-php
 
-## Unreleased
+## 0.7.0
 
 ### Breaking Changes
 
@@ -70,6 +70,10 @@
   refused. The shape of an unusable route with a REST segment keeps the
   segments before the first REST segment, one `**`, and the segments after the
   last one.
+
+- Bump the CDN/ESM tracker pins and the vendored `takt.auto.js` to
+  `@vskstudio/takt-core@0.12.0`, which carries the route redaction grammar
+  these rules rely on. `bin/sync-bundle.sh` now defaults to 0.12.0.
 
 ## 0.6.1
 
