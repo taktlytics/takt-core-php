@@ -160,24 +160,38 @@ final class OptionsTest extends TestCase
         $this->assertSame(Mode::Sdk, $o->mode);
     }
 
-    public function test_plain_http_endpoint_outside_loopback_is_refused(): void
+    public function test_http_endpoint_is_refused(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
         new Options(domain: 'a.com', endpoint: 'http://takt.example.com/api/event');
     }
 
-    public function test_from_array_refuses_plain_http_endpoint_outside_loopback(): void
+    public function test_from_array_refuses_http_endpoint(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
         Options::fromArray(['domain' => 'a.com', 'endpoint' => 'http://takt.example.com']);
     }
 
-    public function test_plain_http_endpoint_on_loopback_is_accepted(): void
+    public function test_http_endpoint_on_localhost_is_refused(): void
     {
-        $o = new Options(domain: 'a.com', endpoint: 'http://localhost:8000/api/event');
-        $this->assertSame('http://localhost:8000/api/event', $o->endpoint);
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: 'http://localhost:8000/api/event');
+    }
+
+    public function test_malformed_endpoint_is_refused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: 'https:///api/event');
+    }
+
+    public function test_https_endpoint_on_localhost_is_accepted(): void
+    {
+        $o = new Options(domain: 'a.com', endpoint: 'https://localhost:8000/api/event');
+        $this->assertSame('https://localhost:8000/api/event', $o->endpoint);
     }
 
     public function test_relative_endpoint_is_accepted(): void

@@ -123,7 +123,7 @@ final class RouteRedactionTest extends TestCase
     public function test_page_keeps_a_non_default_port(): void
     {
         $redaction = new RouteRedaction(['/verify/[token]']);
-        $this->assertSame('http://localhost:8000/verify/[token]', $redaction->page('http://localhost:8000/verify/abc'));
+        $this->assertSame('https://localhost:8000/verify/[token]', $redaction->page('https://localhost:8000/verify/abc'));
     }
 
     public function test_page_leaves_an_unparsable_url_untouched(): void

@@ -215,10 +215,16 @@ final class TaktTest extends TestCase
         yield 'loopback name as subdomain' => ['http://localhost.example.com'];
         yield 'loopback prefix of a public ip' => ['http://127.0.0.1.example.com'];
         yield 'public ip' => ['http://203.0.113.7'];
+        yield 'localhost' => ['http://localhost'];
+        yield 'localhost with port' => ['http://localhost:8000'];
+        yield 'ipv4 loopback' => ['http://127.0.0.1:8000'];
+        yield 'ipv4 loopback block' => ['http://127.8.9.10'];
+        yield 'ipv6 loopback' => ['http://[::1]:8000'];
+        yield 'ftp scheme' => ['ftp://takt.example.com'];
     }
 
     #[DataProvider('insecureEndpoints')]
-    public function test_constructor_refuses_plain_http_outside_loopback(string $endpoint): void
+    public function test_constructor_refuses_non_https_endpoint(string $endpoint): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
@@ -226,17 +232,16 @@ final class TaktTest extends TestCase
     }
 
     /** @return iterable<string,array{string,string}> */
-    public static function loopbackEndpoints(): iterable
+    public static function httpsLoopbackEndpoints(): iterable
     {
-        yield 'localhost' => ['http://localhost', 'http://localhost/api/event'];
-        yield 'localhost with port' => ['http://localhost:8000', 'http://localhost:8000/api/event'];
-        yield 'ipv4 loopback' => ['http://127.0.0.1:8000', 'http://127.0.0.1:8000/api/event'];
-        yield 'ipv4 loopback block' => ['http://127.8.9.10', 'http://127.8.9.10/api/event'];
-        yield 'ipv6 loopback' => ['http://[::1]:8000', 'http://[::1]:8000/api/event'];
+        yield 'localhost' => ['https://localhost', 'https://localhost/api/event'];
+        yield 'localhost with port' => ['https://localhost:8000', 'https://localhost:8000/api/event'];
+        yield 'ipv4 loopback' => ['https://127.0.0.1:8000', 'https://127.0.0.1:8000/api/event'];
+        yield 'ipv6 loopback' => ['https://[::1]:8000', 'https://[::1]:8000/api/event'];
     }
 
-    #[DataProvider('loopbackEndpoints')]
-    public function test_constructor_accepts_http_on_loopback(string $endpoint, string $expected): void
+    #[DataProvider('httpsLoopbackEndpoints')]
+    public function test_constructor_accepts_https_on_loopback(string $endpoint, string $expected): void
     {
         $psr17 = new Psr17Factory();
         $mock = new Client();
