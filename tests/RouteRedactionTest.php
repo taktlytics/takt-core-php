@@ -167,6 +167,18 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/admin/[x]', (new RouteRedaction(['/admin/[x]']))->path('/admin;x/secret'));
     }
 
+    public function test_matrix_truncation_happens_before_dot_segment_removal(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/a/..;/orders/123'));
+        $this->assertSame('/admin/[x]', (new RouteRedaction(['/admin/[x]']))->path('/x/..;/admin/secret'));
+    }
+
+    public function test_path_encoded_exactly_the_maximum_number_of_times_is_matched(): void
+    {
+        $path = '/orders'.self::encoded('/123', 5);
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path($path));
+    }
+
     public function test_raw_path_is_matched_for_patterns_with_literal_escapes(): void
     {
         $this->assertSame('/a%20b/[x]', (new RouteRedaction(['/a%20b/[x]']))->path('/a%20b/1'));

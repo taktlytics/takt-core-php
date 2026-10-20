@@ -141,7 +141,7 @@ final class RouteRedaction
         if ($this->routes === []) {
             return null;
         }
-        $forms = self::forms($pathname);
+        $forms = self::candidateForms($pathname);
         if ($forms === null) {
             return self::FAILED_OUTPUT;
         }
@@ -162,7 +162,7 @@ final class RouteRedaction
     }
 
     /** @return list<string>|null */
-    private static function forms(string $pathname): ?array
+    private static function candidateForms(string $pathname): ?array
     {
         $forms = [$pathname, self::decodeUri($pathname)];
         $current = $pathname;
@@ -179,7 +179,9 @@ final class RouteRedaction
 
     private static function stripMatrixParameters(string $path): string
     {
-        return implode('/', array_map(static fn (string $segment): string => explode(';', $segment, 2)[0], explode('/', $path)));
+        $truncate = static fn (string $segment): string => explode(';', $segment, 2)[0];
+
+        return implode('/', array_map($truncate, explode('/', $path)));
     }
 
     private static function normalize(string $path): string

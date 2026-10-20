@@ -19,6 +19,9 @@
   `/[redacted]`, and the raw path is never sent on failure. A masked page or
   pathname drops its query string and fragment, the `/[redacted]` fallback
   included, and so does a page sent under `routeTemplates`.
+  The matching cost is up to 14 candidate forms compared per path and route:
+  seven spellings (the raw path, the `decodeUri` form, and up to five
+  `rawurldecode` passes), each also tried with its matrix parameters ignored.
 
 ## 0.6.1
 
