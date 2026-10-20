@@ -314,6 +314,28 @@ final class TaktTest extends TestCase
         $this->assertSame('https://example.com/verify/{token}', $body['r']);
     }
 
+    public function test_undecodable_page_is_masked_unless_disabled(): void
+    {
+        $masked = new Client();
+        $masked->addResponse(new Response(202));
+        $this->makeRedactingClient($masked, ['/orders/[id]'])->pageview('https://example.com/orders/%E9/123');
+        $this->assertSame('https://example.com/[redacted]', self::lastBody($masked)['u']);
+
+        $raw = new Client();
+        $raw->addResponse(new Response(202));
+        $psr17 = new Psr17Factory();
+        (new Takt(
+            endpoint: 'https://takt.example.com',
+            domain: 'example.com',
+            httpClient: $raw,
+            requestFactory: $psr17,
+            streamFactory: $psr17,
+            redactRoutes: ['/orders/[id]'],
+            redactUndecodablePaths: false,
+        ))->pageview('https://example.com/orders/%E9/123');
+        $this->assertSame('https://example.com/orders/%E9/123', self::lastBody($raw)['u']);
+    }
+
     public function test_redact_routes_keeps_cross_origin_referrer_and_other_paths(): void
     {
         $mock = new Client();

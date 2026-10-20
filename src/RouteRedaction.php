@@ -19,8 +19,11 @@ final class RouteRedaction
     private readonly ?string $template;
 
     /** @param list<string> $redactRoutes */
-    public function __construct(array $redactRoutes = [], ?string $routeTemplate = null)
-    {
+    public function __construct(
+        array $redactRoutes = [],
+        ?string $routeTemplate = null,
+        private readonly bool $redactUndecodablePaths = true,
+    ) {
         $routes = [];
         foreach ($redactRoutes as $pattern) {
             $pattern = trim($pattern);
@@ -59,7 +62,7 @@ final class RouteRedaction
 
     public function path(string $pathname): string
     {
-        return $this->redactedPath($pathname) ?? $pathname;
+        return $this->template ?? $this->redactedPath($pathname) ?? $pathname;
     }
 
     public function page(string $url): string
@@ -141,7 +144,7 @@ final class RouteRedaction
         if ($this->routes === []) {
             return null;
         }
-        $forms = self::candidateForms($pathname);
+        $forms = self::candidateForms($pathname, $this->redactUndecodablePaths);
         if ($forms === null) {
             return self::FAILED_OUTPUT;
         }
@@ -162,19 +165,42 @@ final class RouteRedaction
     }
 
     /** @return list<string>|null */
-    private static function candidateForms(string $pathname): ?array
+    private static function candidateForms(string $pathname, bool $strict): ?array
     {
         $forms = [$pathname, self::decodeUri($pathname)];
         $current = $pathname;
-        for ($pass = 0; rawurldecode($current) !== $current; $pass++) {
+        for ($pass = 0; ; $pass++) {
+            $next = self::decodeOnce($current, $strict);
+            if ($next === null) {
+                return null;
+            }
+            if ($next === $current) {
+                break;
+            }
             if ($pass === self::MAX_DECODE_PASSES) {
                 return null;
             }
-            $current = rawurldecode($current);
+            $current = $next;
             $forms[] = $current;
         }
 
         return array_merge($forms, array_map(self::stripMatrixParameters(...), $forms));
+    }
+
+    private static function decodeOnce(string $path, bool $strict): ?string
+    {
+        if (!$strict) {
+            return rawurldecode($path);
+        }
+        if (preg_match('/%(?![0-9A-Fa-f]{2})/', $path) !== 0) {
+            return null;
+        }
+        $decoded = rawurldecode($path);
+        if ($decoded !== $path && preg_match('//u', $decoded) !== 1) {
+            return null;
+        }
+
+        return $decoded;
     }
 
     private static function stripMatrixParameters(string $path): string

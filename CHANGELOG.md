@@ -10,9 +10,14 @@
   `InvalidArgumentException` at construction, so the API key is never sent in
   clear or to an unexpected host. Local development serves its collector over
   local https.
+- Route redaction masks a path that cannot be decoded (a malformed escape such
+  as `%ZZ`, or invalid UTF-8 once decoded) as `/[redacted]` when a route is
+  configured. The option `redactUndecodablePaths` (`Takt`, default `true`)
+  restores the former behavior with `false`. Previously such a path was sent raw.
 
 ### Minor Changes
 
+- `path()` returns the route template when one is set, as the browser SDK does.
 - Route redaction matching also tries the path decoded up to five times,
   ignores matrix parameters (`;...`) and removes `.` and `..` segments (RFC
   3986) before matching. A path still encoded after the five passes is sent as

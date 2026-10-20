@@ -179,6 +179,32 @@ final class RouteRedactionTest extends TestCase
         $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path($path));
     }
 
+    public function test_undecodable_path_is_masked_by_default(): void
+    {
+        $redaction = new RouteRedaction(['/orders/[id]']);
+        $this->assertSame('/[redacted]', $redaction->path('/%ZZ/orders/123'));
+        $this->assertSame('/[redacted]', $redaction->path('/orders/%E9/123'));
+        $this->assertSame('/[redacted]', $redaction->path('/orders/%E0%A4%A'));
+    }
+
+    public function test_undecodable_path_is_kept_when_masking_is_disabled(): void
+    {
+        $redaction = new RouteRedaction(['/orders/[id]'], null, false);
+        $this->assertSame('/%ZZ/orders/123', $redaction->path('/%ZZ/orders/123'));
+        $this->assertSame('/orders/%E9/123', $redaction->path('/orders/%E9/123'));
+    }
+
+    public function test_valid_encoded_path_is_matched_in_both_modes(): void
+    {
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]']))->path('/orders/%C3%A9'));
+        $this->assertSame('/orders/[id]', (new RouteRedaction(['/orders/[id]'], null, false))->path('/orders/%C3%A9'));
+    }
+
+    public function test_path_returns_the_route_template_when_set(): void
+    {
+        $this->assertSame('/blog/[slug]', (new RouteRedaction([], '/blog/[slug]'))->path('/anything/else'));
+    }
+
     public function test_raw_path_is_matched_for_patterns_with_literal_escapes(): void
     {
         $this->assertSame('/a%20b/[x]', (new RouteRedaction(['/a%20b/[x]']))->path('/a%20b/1'));
