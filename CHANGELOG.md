@@ -122,15 +122,15 @@
 
 - Fix the server-to-server client sending an empty `u` (URL) when the caller
   passed none. The ingest requires an absolute `http(s)` URL and rejects the
-  whole event with a `400` otherwise, so every URL-less `Takt::event()` — the
-  README's own `Signup` example, and the WooCommerce `Purchase` hook — was
+  whole event with a `400` otherwise, so every URL-less `Takt::event()`, the
+  README's own `Signup` example, and the WooCommerce `Purchase` hook, was
   silently dropped. Omitting the key would not have helped (a missing key
   decodes to the same empty string server-side): the URL now falls back to the
   site home derived from `domain` (`example.com` → `https://example.com/`).
-  The referrer `r` is unaffected — it is legitimately empty for direct access.
+  The referrer `r` is unaffected: it is legitimately empty for direct access.
 - `Takt`'s `$endpoint` now accepts both readings of the setting. It used to mean
   a base origin only (always appending `/api/event`), while `Options::$endpoint`
-  and the JS SDK mean the full collect URL — so passing `Options::HOSTED_ENDPOINT`
+  and the JS SDK mean the full collect URL, so passing `Options::HOSTED_ENDPOINT`
   produced `…/api/event/api/event` and a silent `404`. A value already ending in
   `/api/event` is now used verbatim; the base-origin form is unchanged, so no
   existing configuration breaks.
@@ -146,7 +146,7 @@
   `@vskstudio/takt-core@0.8.0`. Exclusion is segment-bounded (`/app` matches
   `/app` and `/app/…` but not `/application`) and checked at send time, so it
   holds across SPA navigation. Like `scrubUrl`, `exclude` lives only in the full
-  SDK — the ≤ 1 kB minimal snippet omits it — so it requires `Mode::Sdk`;
+  SDK (the ≤ 1 kB minimal snippet omits it), so it requires `Mode::Sdk`;
   `SnippetRenderer` throws if it is set in `inline`/`cdn`/`asset` mode rather than
   silently dropping a privacy control the caller believes is active. The vendored
   CDN/ESM tracker pins are bumped to `@vskstudio/takt-core@0.8.0`.
@@ -181,7 +181,7 @@
 - Harden the server-to-server client: control characters (incl. CR/LF) are now
   stripped from the `Authorization`, `X-Forwarded-For` and `User-Agent` header
   values before they are sent, so a spoofed buyer IP/User-Agent can never split
-  or inject headers — defense in depth on top of the PSR-7 layer's validation.
+  or inject headers: defense in depth on top of the PSR-7 layer's validation.
 - `Revenue` now rejects non-numeric amounts (only the 3-letter currency code was
   validated before).
 

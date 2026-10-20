@@ -1,7 +1,7 @@
 # takt-core-php
 
 
-> 📚 **Documentation** — [taktlytics.com/docs/wrappers/php](https://taktlytics.com/docs/wrappers/php)
+> 📚 **Documentation**: [taktlytics.com/docs/wrappers/php](https://taktlytics.com/docs/wrappers/php)
 
 Framework-agnostic PHP core for [Takt](https://github.com/vskstudio) analytics: a browser snippet renderer and a server-to-server event client.
 
@@ -32,10 +32,10 @@ echo $renderer->render();
 
 The `Mode` enum controls how the bundle is delivered:
 
-- `Mode::Inline` (default) — embeds the bundle inline in a `<script>` tag that self-boots. No extra request, and CSP-friendly: pass `nonce:` in `Options` to emit a `nonce` attribute.
-- `Mode::Cdn` — emits a deferred loader pointing at the jsDelivr-hosted bundle.
-- `Mode::Asset` — emits a deferred loader pointing at a self-hosted `/takt/takt.auto.js`.
-- `Mode::Sdk` — emits an ES-module `<script type="module">import{init}…;init({…})</script>` that boots the full SDK. The only mode able to express `scrubUrl` (see below). The module is loaded from `{scriptOrigin}/takt/takt.esm.js` when `scriptOrigin` is set, otherwise from jsDelivr. Self-hosting it is your responsibility — the vendored bundle only ships `takt.auto.js` (for `Mode::Asset`), not the ES module.
+- `Mode::Inline` (default): embeds the bundle inline in a `<script>` tag that self-boots. No extra request, and CSP-friendly: pass `nonce:` in `Options` to emit a `nonce` attribute.
+- `Mode::Cdn`: emits a deferred loader pointing at the jsDelivr-hosted bundle.
+- `Mode::Asset`: emits a deferred loader pointing at `/takt/takt.auto.js`, served from your own domain.
+- `Mode::Sdk`: emits an ES-module `<script type="module">import{init}…;init({…})</script>` that boots the full SDK. The only mode able to express `scrubUrl` (see below). The module is loaded from `{scriptOrigin}/takt/takt.esm.js` when `scriptOrigin` is set, otherwise from jsDelivr. Serving it from your own domain is your responsibility: the vendored bundle only ships `takt.auto.js` (for `Mode::Asset`), not the ES module.
 
 ```php
 use Vskstudio\Takt\Mode;
@@ -47,34 +47,34 @@ The snippet honors `domain`, `endpoint`, `scriptOrigin`, `excludeLocalhost` and 
 
 ### Where events are sent
 
-By default the snippet ingests to the hosted Takt origin — `https://taktlytics.com/api/event` — so a bare setup works out of the box, including on static sites with no backend. To override:
+By default the snippet ingests to the hosted Takt origin (`https://taktlytics.com/api/event`), so a bare setup works out of the box, including on static sites with no backend. To override:
 
-- `endpoint: '/api/event'` — restore the same-origin first-party proxy (you forward `/api/event` to Takt from your own server). Anti-adblock, but requires a backend.
-- `endpoint: 'https://collect.example.com/api/event'` — any custom absolute collector URL.
-- `scriptOrigin: 'https://t.example.com'` — let the tracker derive `{scriptOrigin}/api/event` (first-party, anti-adblock). `endpoint` wins over `scriptOrigin`.
+- `endpoint: '/api/event'`: restore the same-origin first-party proxy (you forward `/api/event` to Takt from your own server). Anti-adblock, but requires a backend.
+- `endpoint: 'https://collect.example.com/api/event'`: any custom absolute collector URL.
+- `scriptOrigin: 'https://t.example.com'`: let the tracker derive `{scriptOrigin}/api/event` (first-party, anti-adblock). `endpoint` wins over `scriptOrigin`.
 
 An `endpoint` with a scheme other than `https` is refused with an `InvalidArgumentException`, `http://localhost` included, because the server client sends the API key as a Bearer header on every call. A scheme-less endpoint is accepted only when it is a path starting with a single `/`, such as `/api/event`, for the same-origin proxy of the snippet; `//host/…`, `\\host/…` and `host/…` are refused. For local development, serve your collector over local https (for example with [mkcert](https://github.com/FiloSottile/mkcert), whose certificate your machine trusts) and point `endpoint` at `https://localhost:…`.
 
 Autocapture is opt-in and bundled into the vendored `takt.auto.js`. Each toggle adds a token to a single `data-auto` attribute the tracker reads:
 
-- `outbound: true` — outbound link clicks (`outbound`)
-- `files: true` — download clicks (`downloads`); narrow the matched extensions with `fileExtensions: ['pdf', 'zip']`, emitted as `data-downloads-ext`
-- `tagged: true` — elements tagged in HTML with `data-takt-event` (`tagged`)
-- `notFound: true` — 404 pageviews (`404`)
+- `outbound: true`: outbound link clicks (`outbound`)
+- `files: true`: download clicks (`downloads`); narrow the matched extensions with `fileExtensions: ['pdf', 'zip']`, emitted as `data-downloads-ext`
+- `tagged: true`: elements tagged in HTML with `data-takt-event` (`tagged`)
+- `notFound: true`: 404 pageviews (`404`)
 
-`scriptOrigin` sets a first-party origin to serve the tracker + derive the endpoint from (`{origin}/api/event`) — your Takt domain or a custom domain to dodge ad-blockers (`endpoint` wins over it). In `Mode::Asset` the loader `src` is also served from that origin (`{origin}/takt/takt.auto.js`).
+`scriptOrigin` sets a first-party origin to serve the tracker + derive the endpoint from (`{origin}/api/event`), for example a custom domain to dodge ad-blockers (`endpoint` wins over it). In `Mode::Asset` the loader `src` is also served from that origin (`{origin}/takt/takt.auto.js`).
 
 ### Advanced options
 
-Each is `null` by default ("unset" — the tracker's own default applies); only a non-default value is rendered.
+Each is `null` by default ("unset": the tracker's own default applies); only a non-default value is rendered.
 
-- `sampleRate: 0.5` — keep ~50% of hits (`data-sample-rate`).
-- `trackQuery: true` — keep the raw query string + hash in tracked URLs (`data-track-query`); off by default URLs are stripped.
-- `queryParams: ['utm_source', 'utm_medium']` — allowlist of params to keep when `trackQuery` is off (`data-query-params`).
-- `respectDnt: false` — stop honoring the browser Do-Not-Track header (`data-respect-dnt`).
-- `enabled: false` — kill-switch; the snippet still renders but the tracker boots disabled (`data-enabled`).
-- `scrubUrl: '(u) => u.split("#")[0]'` — a **raw JS function** to rewrite every URL before it is sent.
-- `exclude: ['/app', '/account']` — path prefixes never tracked (segment-bounded: `/app` matches `/app` and `/app/…` but not `/application`), checked at send time so it holds across SPA navigation.
+- `sampleRate: 0.5`: keep ~50% of hits (`data-sample-rate`).
+- `trackQuery: true`: keep the raw query string + hash in tracked URLs (`data-track-query`); off by default URLs are stripped.
+- `queryParams: ['utm_source', 'utm_medium']`: allowlist of params to keep when `trackQuery` is off (`data-query-params`).
+- `respectDnt: false`: stop honoring the browser Do-Not-Track header (`data-respect-dnt`).
+- `enabled: false`: kill-switch; the snippet still renders but the tracker boots disabled (`data-enabled`).
+- `scrubUrl: '(u) => u.split("#")[0]'`: a **raw JS function** to rewrite every URL before it is sent.
+- `exclude: ['/app', '/account']`: path prefixes never tracked (segment-bounded: `/app` matches `/app` and `/app/…` but not `/application`), checked at send time so it holds across SPA navigation.
 - `redactRoutes: ['/verify/{token}', '/reset/[code]']`: sensitive routes, sent as their pattern instead of the real path. See [Route redaction](#route-redaction).
 - `routeTemplates: true`: send every page as its route template. See [Route redaction](#route-redaction).
 - `routeTemplate: '/users/{id}'`: the route template of the page being rendered, used when `routeTemplates` is on.
@@ -85,9 +85,9 @@ new Options(domain: 'example.com', sampleRate: 0.5, queryParams: ['utm_source'])
 
 In `Mode::Sdk`, `scrubUrl` rewrites the page URL and referrer, and since `@vskstudio/takt-core@0.9.0` also the `url` prop of autocaptured outbound link clicks (`outbound: true`) and file downloads (`files: true`). A token hidden in the path of an outbound or download link is therefore scrubbed like the page URL. The minimal snippet of the other modes only strips the query string and hash of those links.
 
-`scrubUrl` cannot be expressed as a data-attribute, so it requires `Mode::Sdk`; constructing a `SnippetRenderer` with `scrubUrl` set in any other mode throws. It is injected **verbatim** into the page as JavaScript — it is **dev-controlled only**. Never build it from user input.
+`scrubUrl` cannot be expressed as a data-attribute, so it requires `Mode::Sdk`; constructing a `SnippetRenderer` with `scrubUrl` set in any other mode throws. It is injected **verbatim** into the page as JavaScript, and it is **dev-controlled only**. Never build it from user input.
 
-`exclude` likewise lives only in the full SDK (the ≤ 1 kB minimal snippet omits it), so it too requires `Mode::Sdk`; setting it in `inline`/`cdn`/`asset` mode throws rather than silently dropping the exclusion — a dropped privacy control would leak the very paths it is meant to hide.
+`exclude` likewise lives only in the full SDK (the ≤ 1 kB minimal snippet omits it), so it too requires `Mode::Sdk`; setting it in `inline`/`cdn`/`asset` mode throws rather than silently dropping the exclusion, since a dropped privacy control would leak the very paths it is meant to hide.
 
 ```php
 new Options(
@@ -152,7 +152,7 @@ $takt->event('Verified', url: 'https://example.com/users/42', route: '/users/{id
 
 - Requires an ingest-scoped API key bound to the domain.
 - Use `->withVisitor($ip, $userAgent)` so events are attributed to the visitor rather than your server.
-- Pass the page URL whenever you have one — it is what the event is attributed to. Omitted (or blank), it falls back to the site home derived from `domain` (`https://example.com/`): the ingest rejects a non-absolute URL outright, so an empty one would drop the event.
+- Pass the page URL whenever you have one, since it is what the event is attributed to. Omitted (or blank), it falls back to the site home derived from `domain` (`https://example.com/`): the ingest rejects a non-absolute URL outright, so an empty one would drop the event.
 - Fire-and-forget by default: transport errors are swallowed. Call `->strict()` to get a client that throws on failure (handy in tests).
 - Pass `redactRoutes: [...]` to the constructor to redact the page URL and same-origin referrer of every call, with the same patterns as the snippet.
 - Pass `redactUndecodablePaths: false` to decode a path that cannot be decoded (a malformed escape such as `%ZZ`, or invalid UTF-8 once decoded) tolerantly instead of masking it. It is then matched like any other path: a path matching a route goes out as its template (`/orders/123%ZZ` becomes `/orders/[id]`), and only a path matching no route goes out raw. The default, `true`, masks it as `/[redacted]` when a route is configured, as the browser SDK does. The browser SDK has no such option.

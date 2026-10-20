@@ -22,8 +22,8 @@ final class Takt
     /**
      * @param string $endpoint Where events are posted. Both forms are accepted
      *   and normalized to the same collect URL:
-     *   - a base origin — {@see Options::HOSTED_ORIGIN} ('https://taktlytics.com')
-     *     or your own first-party origin — to which '/api/event' is appended;
+     *   - a base origin: {@see Options::HOSTED_ORIGIN} ('https://taktlytics.com')
+     *     or your own first-party origin, to which '/api/event' is appended;
      *   - a full collect URL already ending in '/api/event', such as
      *     {@see Options::HOSTED_ENDPOINT}, used verbatim.
      *   The second form matches {@see Options::$endpoint} and the JS SDK, where
@@ -123,7 +123,7 @@ final class Takt
 
     /**
      * The ingest requires an absolute http(s) URL and rejects the whole event
-     * (400) otherwise — a missing key decodes to the same empty string as an
+     * (400) otherwise, a missing key decodes to the same empty string as an
      * explicit one, so omitting it would not help. Callers with no page context
      * (a WooCommerce purchase hook, a queued job) therefore get the site home.
      */
@@ -194,7 +194,7 @@ final class Takt
     /**
      * Strip control characters (incl. CR/LF) from an outgoing header value, so a
      * spoofed buyer IP/User-Agent or a mangled key can never split or inject
-     * headers — defense in depth on top of the PSR-7 layer's own validation.
+     * headers: defense in depth on top of the PSR-7 layer's own validation.
      */
     private static function headerSafe(string $value): string
     {
