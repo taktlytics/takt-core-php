@@ -464,7 +464,8 @@ final class RouteRedactionTest extends TestCase
         yield 'hyphen after a class escape next to a digit' => ['/x/{a<\\d+>}/{b<[\\d-z]>}', '/x/1/a'];
         yield 'reversed counted repetition next to a digit' => ['/x/{a<\\d+>}/{b<a{3,2}>}', '/x/1/aaa'];
         yield 'escaped slash next to a digit' => ['/x/{a<\\d+>}/{b<\\/>}', '/x/1/a'];
-        yield 'control character next to a digit' => ["/x/{a<\\d+>}/{b<a\tb>}", '/x/1/a'];
+        yield 'tab next to a digit' => ["/x/{a<\\d+>}/{b<a\tb>}", '/x/1/a'];
+        yield 'control character U+0001 next to a digit' => ["/x/{a<\\d+>}/{b<a\x01b>}", '/x/1/a'];
         yield 'space range spanning a slash next to a digit' => ['/x/{a<\\d+>}/{b<[ -~]+>}', '/x/1/a'];
     }
 
@@ -504,6 +505,30 @@ final class RouteRedactionTest extends TestCase
         }
     }
 
+
+    /** @return iterable<string,array{string,string}> */
+    public static function ambiguousRoutes(): iterable
+    {
+        yield 'two segments with two variable quantifiers each' => ['/{a}{b}/{c}{d}', '/ab/cd'];
+        yield 'constrained segment with two quantifiers next to a segment with two' => ['/{p<a*a*>}/{q}{r}', '/aa/xy'];
+    }
+
+    #[DataProvider('ambiguousRoutes')]
+    public function test_ambiguity_degree_above_one_masks_the_route_shape(string $route, string $path): void
+    {
+        $this->assertSame('/[redacted]', (new RouteRedaction([$route]))->path($path));
+    }
+
+    public function test_ambiguity_degree_of_one_is_accepted(): void
+    {
+        $this->assertSame('/{a}{b}/{c}', (new RouteRedaction(['/{a}{b}/{c}']))->path('/ab/c'));
+    }
+
+    public function test_lone_undecodable_byte_is_one_byte_in_tolerant_mode(): void
+    {
+        $this->assertSame('/x/{p}', (new RouteRedaction(['/x/{p<.>}'], null, false))->path('/x/%FF'));
+        $this->assertSame('/[redacted]', (new RouteRedaction(['/x/{p<.>}']))->path('/x/%FF'));
+    }
 
     public function test_overlong_segment_masks_even_when_the_constraint_breaks(): void
     {

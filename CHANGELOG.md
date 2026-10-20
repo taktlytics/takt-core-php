@@ -58,6 +58,10 @@
   value longer than 256 bytes for a constrained parameter is masked before the
   constraint is checked. A `/` inside `<...>` does not split the route into
   segments.
+- A route is also unusable when its ambiguity degree exceeds one: the sum,
+  over its segments, of each segment's variable quantifiers (unconstrained
+  parameters included) minus one, floored at zero per segment. `/{a}{b}/{c}` is
+  accepted, `/{a}{b}/{c}{d}` and `/{p<a*a*>}/{q}{r}` are refused.
 
 ## 0.6.1
 
