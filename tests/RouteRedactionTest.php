@@ -99,6 +99,12 @@ final class RouteRedactionTest extends TestCase
         $this->assertStringEndsWith('?t=1', $page);
     }
 
+    public function test_long_run_of_slashes_is_collapsed_before_matching(): void
+    {
+        $redaction = new RouteRedaction(['/verify/[token]']);
+        $this->assertSame('/verify/[token]', $redaction->path('/verify'.str_repeat('/', 5000).'abc'));
+    }
+
     public function test_first_matching_pattern_wins(): void
     {
         $redaction = new RouteRedaction(['/a/[x]', '/a/:y']);
