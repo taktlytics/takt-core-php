@@ -221,14 +221,35 @@ final class TaktTest extends TestCase
         yield 'ipv4 loopback block' => ['http://127.8.9.10'];
         yield 'ipv6 loopback' => ['http://[::1]:8000'];
         yield 'ftp scheme' => ['ftp://takt.example.com'];
+        yield 'port out of range' => ['http://evil.com:99999'];
+        yield 'http without host' => ['http:///evil.com'];
+        yield 'https without host' => ['https:evil.com'];
+        yield 'protocol relative host' => ['//evil.com'];
+        yield 'protocol relative host with path' => ['//evil.com/api/event'];
+        yield 'backslash host' => ['\\\\evil.com/api/event'];
+        yield 'bare host' => ['evil.com/api/event'];
+        yield 'tab then protocol relative host' => ["/\tevil.com/api/event"];
     }
 
     #[DataProvider('insecureEndpoints')]
     public function test_constructor_refuses_non_https_endpoint(string $endpoint): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $mock = new Client();
+        $psr17 = new Psr17Factory();
+        try {
+            $takt = new Takt(
+                endpoint: $endpoint,
+                domain: 'example.com',
+                apiKey: 'k_secret',
+                httpClient: $mock,
+                requestFactory: $psr17,
+                streamFactory: $psr17,
+            );
+            $takt->pageview('https://example.com/');
+        } catch (\InvalidArgumentException) {
+        }
 
-        new Takt(endpoint: $endpoint, domain: 'example.com', apiKey: 'k_test');
+        $this->assertCount(0, $mock->getRequests());
     }
 
     /** @return iterable<string,array{string,string}> */

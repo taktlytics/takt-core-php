@@ -2,6 +2,7 @@
 
 namespace Vskstudio\Takt\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Vskstudio\Takt\Mode;
 use Vskstudio\Takt\Options;
@@ -198,5 +199,21 @@ final class OptionsTest extends TestCase
     {
         $o = new Options(domain: 'a.com', endpoint: '/api/event');
         $this->assertSame('/api/event', $o->endpoint);
+    }
+
+    /** @return iterable<string,array{string}> */
+    public static function schemeLessHostEndpoints(): iterable
+    {
+        yield 'protocol relative' => ['//evil.com/api/event'];
+        yield 'backslash host' => ['\\\\evil.com/api/event'];
+        yield 'bare host' => ['evil.com/api/event'];
+    }
+
+    #[DataProvider('schemeLessHostEndpoints')]
+    public function test_scheme_less_endpoint_with_a_host_is_refused(string $endpoint): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Options(domain: 'a.com', endpoint: $endpoint);
     }
 }

@@ -159,7 +159,7 @@ final class RouteRedaction
 
     private static function collapseSlashes(string $path): string
     {
-        return preg_replace('#/+#', '/', $path) ?? $path;
+        return preg_replace('#/+#', '/', $path) ?? self::FAILED_OUTPUT;
     }
 
     private function rewrite(string $url, ?string $template): string
