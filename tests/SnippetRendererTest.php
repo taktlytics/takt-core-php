@@ -13,7 +13,7 @@ final class SnippetRendererTest extends TestCase
     public function test_cdn_mode_emits_loader_with_data_attrs(): void
     {
         $html = (new SnippetRenderer(new Options(domain: 'example.com', outbound: true, mode: Mode::Cdn)))->render();
-        $this->assertStringContainsString('cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.12.1/dist/takt.auto.js', $html);
+        $this->assertStringContainsString('cdn.jsdelivr.net/npm/@vskstudio/takt-core@0.12.2/dist/takt.auto.js', $html);
         $this->assertStringContainsString('takt.auto.js', $html);
         $this->assertStringContainsString('data-domain="example.com"', $html);
         $this->assertStringContainsString('data-auto="outbound"', $html);
@@ -201,7 +201,7 @@ final class SnippetRendererTest extends TestCase
         )))->render();
         $this->assertStringContainsString('<script type="module"', $html);
         $this->assertStringContainsString('import{init}from', $html);
-        $this->assertStringContainsString('@vskstudio\/takt-core@0.12.1\/+esm', $html);
+        $this->assertStringContainsString('@vskstudio\/takt-core@0.12.2\/+esm', $html);
         $this->assertStringContainsString('init({', $html);
         $this->assertStringContainsString('"domain":"example.com"', $html);
         $this->assertStringContainsString('"sampleRate":0.25', $html);
@@ -361,5 +361,14 @@ final class SnippetRendererTest extends TestCase
         $this->assertNotSame($base, $page);
         $this->assertStringContainsString('routeTemplate:()=>"\/users\/{id}"', $page->render());
         $this->assertStringNotContainsString('routeTemplate:', $base->render());
+    }
+
+    public function test_vendored_bundle_ships_the_21_default_download_extensions(): void
+    {
+        $bundle = (string) file_get_contents(__DIR__ . '/../resources/takt.auto.js');
+        $this->assertStringContainsString(
+            '"pdf","zip","dmg","xlsx","csv","doc","docx","ppt","pptx","rar","7z","gz","mp3","mp4","wav","avi","mov","exe","apk","mkv","txt"',
+            $bundle,
+        );
     }
 }
