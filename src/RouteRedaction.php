@@ -262,11 +262,10 @@ final class RouteRedaction
 
     private static function decodeUri(string $path): string
     {
-        $decoded = preg_replace_callback(
-            '#%([0-9A-Fa-f]{2})#',
-            static fn (array $m): string => in_array(strtoupper($m[1]), self::RESERVED_ESCAPES, true) ? $m[0] : chr((int) hexdec($m[1])),
-            $path,
-        );
+        $decodeEscape = static fn (array $m): string => in_array(strtoupper($m[1]), self::RESERVED_ESCAPES, true)
+            ? $m[0]
+            : chr((int) hexdec($m[1]));
+        $decoded = preg_replace_callback('#%([0-9A-Fa-f]{2})#', $decodeEscape, $path);
 
         return $decoded !== null && preg_match('//u', $decoded) === 1 ? $decoded : $path;
     }
